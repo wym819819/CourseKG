@@ -43,5 +43,6 @@ package-lock.json
 
 test
 cache
+log
 
 *.ps1

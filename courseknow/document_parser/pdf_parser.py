@@ -97,7 +97,8 @@ class PDFParser(Parser):
         result = self.__pdf.get_toc()
         for item in result:
             level, title, page = item
-            page -= 1
+            page -= 1  # 从0开始
+            level -= 1  # 从0开始
             bookmark = BookMark(
                 id='1:' + str(uuid.uuid4()) + f':{level}',
                 title=title,
@@ -184,4 +185,5 @@ class PDFParser(Parser):
         """
         return Document(id='0:' + str(uuid.uuid4()),
                         name=os.path.basename(self.file_path).split('.')[0],
-                        bookmarks=self.get_bookmarks())
+                        bookmarks=self.get_bookmarks(),
+                        parser=self)  # 与解析器进行关联

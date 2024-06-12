@@ -2,5 +2,9 @@
 
 一、模型的 API 服务
 
+ - Qwen Turbo
+ - Qwen Max
+
+
 二、本地部署模型
 

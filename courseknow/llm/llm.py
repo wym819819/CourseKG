@@ -5,6 +5,7 @@ import requests
 
 class LLMType(Enum):
     Qwen_Turbo = 'qwen-turbo'
+    Qwen_Max = 'qwen-max'
 
 
 class LLM:
