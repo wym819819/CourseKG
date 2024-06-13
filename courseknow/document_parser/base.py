@@ -28,7 +28,7 @@ class Content:
 
 
 @dataclass
-class KonwledgePoint:
+class KnowledgePoint:
     """ 知识点
     """
     id: str
@@ -44,7 +44,7 @@ class BookMark:
     page_index: int
     page_end: int
     level: int
-    subs: list['BookMark'] | list[KonwledgePoint] | None
+    subs: list['BookMark'] | list[KnowledgePoint] | None
 
     def set_page_end(self, page_end: int) -> None:
         """ 设置书签的结束页, 和直接修改 BookMark 对象的 page_end 属性不同, 该方法会考虑到书签嵌套的情况
@@ -66,14 +66,14 @@ class Document:
     bookmarks: list[BookMark]
     parser: 'Parser'
 
-    def set_knowledgepoints_by_llm(self, llm: LLM, domin: str) -> None:
+    def set_knowledgepoints_by_llm(self, llm: LLM, domain: str) -> None:
         """ 使用 LLM 抽取知识点存储到 BookMark 中
 
         Args:
             llm (LLM): 指定 LLM
-            domin (str): 知识点相关的领域
+            domain (str): 知识点相关的领域
         """
-        points: list[KonwledgePoint] = []
+        points: list[KnowledgePoint] = []
 
         def set_knowledgepoints(bookmarks: list[BookMark]) -> None:
             for bookmark in bookmarks:
@@ -107,7 +107,7 @@ class Document:
                                     break
                             page_contents = page_contents[:idx]
                         contents.extend(page_contents)
-                    if len(page_contents) == 0:
+                    if len(contents) == 0:
                         bookmark.subs = []  # None 和 [] 表示的含义不一样
                         continue
                     text_contents = '\n'.join(
@@ -115,24 +115,26 @@ class Document:
 
                     try:
                         resp = llm.chat(
-                            knowledgepoint_prompt(text_contents, domin))
+                            knowledgepoint_prompt(text_contents, domain))
                         logger.success('模型返回: ' + resp)
                         # 模型可能以md格式返回
-                        if resp.startswith('```'):
+                        if resp.startswith('```'):  # 多行代码
                             resp = '\n'.join(resp.split('\n')[1:-1])
+                        elif resp.startswith('`'):  # 单行代码
+                            resp = resp[1:-1]
                         generate_points = json.loads(resp)
                         logger.success(generate_points)
-                    except:
-                        logger.error('模型生成错误')
+                    except Exception as e:
+                        logger.error(e)
                         generate_points = []
-                    subs: list[KonwledgePoint] = []
+                    subs: list[KnowledgePoint] = []
                     for generate in generate_points:
                         for point in points:
-                            if generate == point.name:  # 实体消歧
+                            if generate == point.name:  # 实体对齐
                                 subs.append(point)
                                 break
                         else:
-                            new_point = KonwledgePoint(id='2:' +
+                            new_point = KnowledgePoint(id='2:' +
                                                        str(uuid.uuid4()),
                                                        name=generate)
                             subs.append(new_point)
@@ -155,24 +157,24 @@ class Document:
             cyphers: list[str] = []
             for bookmark in bookmarks:
                 cyphers.append(
-                    f'CREATE (:Chaper {{id: "{bookmark.id}", name: "{bookmark.title}", page_start: {bookmark.page_index}, page_end: {bookmark.page_end}}})'
+                    f'CREATE (:Chapter {{id: "{bookmark.id}", name: "{bookmark.title}", page_start: {bookmark.page_index}, page_end: {bookmark.page_end}}})'
                 )
                 cyphers.append(  # 这里写不写类别无所谓
-                    f'MATCH (n1 {{id: "{parent_id}"}}) MATCH (n2:Chaper {{id: "{bookmark.id}"}}) CREATE (n1)-[:SubChapter {{name: "子章节"}}]->(n2)'
+                    f'MATCH (n1 {{id: "{parent_id}"}}) MATCH (n2:Chapter {{id: "{bookmark.id}"}}) CREATE (n1)-[:SubChapter {{name: "子章节"}}]->(n2)'
                 )
                 if bookmark.subs and isinstance(bookmark.subs[-1], BookMark):
                     cyphers.extend(
                         bookmarks_to_cypher(bookmark.subs, bookmark.id))
                 elif bookmark.subs and isinstance(bookmark.subs[-1],
-                                                  KonwledgePoint):
+                                                  KnowledgePoint):
                     for point in bookmark.subs:
                         if point.id in created_knowledgepoint_ids:
                             cyphers.append(
-                                f'MATCH (n1:Chaper {{id: "{bookmark.id}"}}) MATCH (n2:KnowledgePoint {{id: "{point.id}"}}) CREATE (n1)-[:Has {{name: "提到知识点"}}]->(n2)'
+                                f'MATCH (n1:Chapter {{id: "{bookmark.id}"}}) MATCH (n2:KnowledgePoint {{id: "{point.id}"}}) CREATE (n1)-[:Has {{name: "提到知识点"}}]->(n2)'
                             )
                         else:
                             cyphers.append(
-                                f'MATCH (n1:Chaper {{id: "{bookmark.id}"}}) CREATE (n2:KnowledgePoint {{id: "{point.id}", name: "{point.name}"}}) CREATE (n1)-[:Has {{name: "提到知识点"}}]->(n2)'
+                                f'MATCH (n1:Chapter {{id: "{bookmark.id}"}}) CREATE (n2:KnowledgePoint {{id: "{point.id}", name: "{point.name}"}}) CREATE (n1)-[:Has {{name: "提到知识点"}}]->(n2)'
                             )
                             created_knowledgepoint_ids.append(point.id)
             return cyphers

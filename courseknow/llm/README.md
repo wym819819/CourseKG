@@ -8,3 +8,6 @@
 
 二、本地部署模型
 
+- Qwen2 7B
+- OneKE (基于Chinese-Alpaca-2-13B全参数微调)
+
