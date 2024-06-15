@@ -76,7 +76,6 @@ class PDFParser(Parser):
         """
         super().__init__(pdf_path)
         self.__pdf = fitz.open(pdf_path)
-        # 对每个对象实例只需要初始化一次
         self.__ocr_engine = None
 
     def __enter__(self) -> 'PDFParser':
@@ -132,7 +131,7 @@ class PDFParser(Parser):
             Page: 文档页面
         """
         if structure:
-            if not self.__ocr_engine:
+            if self.__ocr_engine is None:
                 self.__ocr_engine = PPStructure(table=False,
                                                 ocr=True,
                                                 show_log=False)

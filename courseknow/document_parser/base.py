@@ -1,13 +1,15 @@
 from dataclasses import dataclass
 from enum import Enum
-from courseknow.llm import LLM, knowledgepoint_prompt
+from ..llm import LLM, KnowledgepointPrompt
 import uuid
 import re
-import json
 from loguru import logger
+from sentence_transformers import SentenceTransformer
+import os
+from ..util import get_root_path
 
 logger.remove(0)
-logger.add("log/parser.log",
+logger.add(os.path.join(get_root_path(), "log/parser.log"),
            format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
            mode="w")
 
@@ -66,7 +68,8 @@ class Document:
     bookmarks: list[BookMark]
     parser: 'Parser'
 
-    def set_knowledgepoints_by_llm(self, llm: LLM, domain: str) -> None:
+    def set_knowledgepoints_by_llm(self, llm: LLM,
+                                   prompt: KnowledgepointPrompt) -> None:
         """ 使用 LLM 抽取知识点存储到 BookMark 中
 
         Args:
@@ -74,6 +77,12 @@ class Document:
             domain (str): 知识点相关的领域
         """
         points: list[KnowledgePoint] = []
+
+        # 使用句嵌入模型比较知识点相关性
+        threshold = 0.9
+        model = SentenceTransformer(
+            os.path.join(get_root_path(),
+                         'pretrain/iampanda/zpoint_large_embedding_zh'))
 
         def set_knowledgepoints(bookmarks: list[BookMark]) -> None:
             for bookmark in bookmarks:
@@ -107,38 +116,42 @@ class Document:
                                     break
                             page_contents = page_contents[:idx]
                         contents.extend(page_contents)
-                    if len(contents) == 0:
-                        bookmark.subs = []  # None 和 [] 表示的含义不一样
-                        continue
                     text_contents = '\n'.join(
                         [content.content for content in contents])
-
-                    try:
-                        resp = llm.chat(
-                            knowledgepoint_prompt(text_contents, domain))
-                        logger.success('模型返回: ' + resp)
-                        # 模型可能以md格式返回
-                        if resp.startswith('```'):  # 多行代码
-                            resp = '\n'.join(resp.split('\n')[1:-1])
-                        elif resp.startswith('`'):  # 单行代码
-                            resp = resp[1:-1]
-                        generate_points = json.loads(resp)
-                        logger.success(generate_points)
-                    except Exception as e:
-                        logger.error(e)
-                        generate_points = []
+                    text_contents = text_contents.strip()
+                    if len(text_contents) == 0:
+                        bookmark.subs = []
+                        continue
+                    resp = llm.chat(prompt.get_prompt(text_contents))
+                    logger.success('模型返回: ' + resp)
+                    generate_points = prompt.post_process(resp)
+                    logger.success('生成知识点: ' + str(generate_points))
                     subs: list[KnowledgePoint] = []
                     for generate in generate_points:
+                        generate_name_embed = model.encode(
+                            generate, normalize_embeddings=True)
                         for point in points:
-                            if generate == point.name:  # 实体对齐
+                            if generate == point.name or (  # 名称相同则无需计算
+                                    similarity :=
+                                    generate_name_embed @ point.name_embed
+                            ) > threshold:  # 实体归一化 判断余弦相似度
+                                logger.info(f'{generate} {point.name} ' +
+                                            ('相同' if generate ==
+                                             point.name else f'{similarity}'))
                                 subs.append(point)
                                 break
                         else:
                             new_point = KnowledgePoint(id='2:' +
                                                        str(uuid.uuid4()),
                                                        name=generate)
+                            # 额外设置嵌入向量属性
+                            setattr(new_point, 'name_embed',
+                                    generate_name_embed)
                             subs.append(new_point)
                             points.append(new_point)
+                    # subs需要去重 使用name即可
+                    unique_objs_dict = {obj.name: obj for obj in subs}
+                    subs = list(unique_objs_dict.values())
                     bookmark.subs = subs
 
         set_knowledgepoints(self.bookmarks)

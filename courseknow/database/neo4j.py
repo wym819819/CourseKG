@@ -1,5 +1,5 @@
 from py2neo import Graph
-from tqdm.rich import tqdm
+from tqdm import tqdm
 
 
 def singleton(cls):
@@ -28,7 +28,7 @@ class Neo4j:
         self.graph = Graph(url, auth=(username, password), name='neo4j')
 
     def run(self, cyphers: str | list[str]) -> None:
-        """ 执行一条或多条cypher语句
+        """ 执行一条或多条 cypher 语句
 
         Args:
             cyphers (str | list[str]): 一条或多条cypher语句

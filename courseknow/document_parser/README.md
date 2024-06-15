@@ -9,3 +9,7 @@
 - Unstructed
 - PaddleOCR PP-Structure (CPU version)
 - LlamaParse / ChatDOC
+
+三、基于多模态大模型的方法：将文档转换成图片格式，通过提示词指导大模型读取文档内容
+
+- MiniCPM-Llama3-v2.5 (目前开源模型榜单第一)

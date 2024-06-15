@@ -1,2 +1,2 @@
-from .llm import LLM, LLMType
-from .prompt import knowledgepoint_prompt
+from .prompt import DeepKEPrompt, GPTNERPrompt, KnowledgepointPrompt
+from .llm import LLM, Qwen2, QwenAPI

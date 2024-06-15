@@ -44,5 +44,6 @@ package-lock.json
 test
 cache
 log
+pretrain
 
 *.ps1
