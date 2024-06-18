@@ -4,12 +4,12 @@ from ..llm import LLM, KnowledgepointPrompt
 import uuid
 import re
 from loguru import logger
-from sentence_transformers import SentenceTransformer
 import os
-from ..util import get_root_path
+from abc import ABC, abstractmethod
+from .config import ignore_page, parser_log
 
 logger.remove(0)
-logger.add(os.path.join(get_root_path(), "log/parser.log"),
+logger.add(parser_log,
            format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
            mode="w")
 
@@ -58,6 +58,21 @@ class BookMark:
         if self.subs and isinstance(self.subs[-1], BookMark):
             self.subs[-1].set_page_end(page_end)
 
+    def to_dict(self) -> dict:
+        """ 将 BookMark 对象转换为 dict 形式
+
+        Returns:
+            dict: dict 形式
+        """
+        return {
+            'title':
+            self.title,
+            'page_range':
+            f'[{self.page_index}, {self.page_end}]',
+            'subs': [sub.to_dict()
+                     for sub in self.subs] if self.subs is not None else []
+        }
+
 
 @dataclass
 class Document:
@@ -78,14 +93,10 @@ class Document:
         """
         points: list[KnowledgePoint] = []
 
-        # 使用句嵌入模型比较知识点相关性
-        threshold = 0.9
-        model = SentenceTransformer(
-            os.path.join(get_root_path(),
-                         'pretrain/iampanda/zpoint_large_embedding_zh'))
-
         def set_knowledgepoints(bookmarks: list[BookMark]) -> None:
             for bookmark in bookmarks:
+                if bookmark.title in ignore_page:
+                    continue
                 if bookmark.subs and isinstance(bookmark.subs[-1], BookMark):
                     set_knowledgepoints(bookmark.subs)
                 else:
@@ -95,7 +106,7 @@ class Document:
                     for pg in range(bookmark.page_index,
                                     bookmark.page_end + 1):
 
-                        # 起始页和终止页需要进行内容定位
+                        # 起始页内容定位
                         page_contents = self.parser.get_page(pg).contents
                         if pg == bookmark.page_index:
                             idx = 0
@@ -108,6 +119,7 @@ class Document:
                                     idx = i + 1
                                     break
                             page_contents = page_contents[idx:]
+                        # 终止页内容定位
                         if pg == bookmark.page_end:
                             idx = len(page_contents)
                             for i, content in enumerate(page_contents):
@@ -118,40 +130,33 @@ class Document:
                         contents.extend(page_contents)
                     text_contents = '\n'.join(
                         [content.content for content in contents])
+                    # 防止生成全空白
                     text_contents = text_contents.strip()
                     if len(text_contents) == 0:
                         bookmark.subs = []
                         continue
-                    resp = llm.chat(prompt.get_prompt(text_contents))
-                    logger.success('模型返回: ' + resp)
-                    generate_points = prompt.post_process(resp)
+                    retry = 0
+                    while True:
+                        resp = llm.chat(prompt.get_prompt(text_contents))
+                        generate_points = prompt.post_process(resp)
+                        if len(generate_points
+                               ) <= 5 or retry >= 3:  # 生成数量过多则重试
+                            break
+                        else:
+                            retry += 1
                     logger.success('生成知识点: ' + str(generate_points))
                     subs: list[KnowledgePoint] = []
                     for generate in generate_points:
-                        generate_name_embed = model.encode(
-                            generate, normalize_embeddings=True)
                         for point in points:
-                            if generate == point.name or (  # 名称相同则无需计算
-                                    similarity :=
-                                    generate_name_embed @ point.name_embed
-                            ) > threshold:  # 实体归一化 判断余弦相似度
-                                logger.info(f'{generate} {point.name} ' +
-                                            ('相同' if generate ==
-                                             point.name else f'{similarity}'))
+                            if generate == point.name:
                                 subs.append(point)
                                 break
                         else:
                             new_point = KnowledgePoint(id='2:' +
                                                        str(uuid.uuid4()),
                                                        name=generate)
-                            # 额外设置嵌入向量属性
-                            setattr(new_point, 'name_embed',
-                                    generate_name_embed)
                             subs.append(new_point)
                             points.append(new_point)
-                    # subs需要去重 使用name即可
-                    unique_objs_dict = {obj.name: obj for obj in subs}
-                    subs = list(unique_objs_dict.values())
                     bookmark.subs = subs
 
         set_knowledgepoints(self.bookmarks)
@@ -205,7 +210,7 @@ class Page:
     contents: list[Content]
 
 
-class Parser:
+class Parser(ABC):
 
     def __init__(self, file_path: str) -> None:
         """ 文档解析器基类
@@ -221,11 +226,13 @@ class Parser:
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         self.close()
 
+    @abstractmethod
     def close(self) -> None:
         """ 关闭文档
         """
         raise NotImplementedError
 
+    @abstractmethod
     def get_bookmarks(self) -> list[BookMark]:
         """  获取pdf文档书签
 
@@ -234,6 +241,7 @@ class Parser:
         """
         raise NotImplementedError
 
+    @abstractmethod
     def get_page(self, page_index: int) -> Page:
         """ 获取文档页面
 
@@ -248,6 +256,7 @@ class Parser:
         """
         raise NotImplementedError
 
+    @abstractmethod
     def get_pages(self) -> list[Page]:
         """ 获取文档所有页面
 
@@ -259,6 +268,7 @@ class Parser:
         """
         raise NotImplementedError
 
+    @abstractmethod
     def get_document(self) -> Document:
         """ 获取文档
 

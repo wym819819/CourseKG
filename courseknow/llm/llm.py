@@ -1,14 +1,19 @@
 import os
 import requests
 from modelscope import AutoTokenizer, AutoModelForCausalLM
+from abc import ABC, abstractmethod
+import vllm
+from vllm import SamplingParams
 
 
-class LLM:
+class LLM(ABC):
 
     def __init__(self) -> None:
         """ 多种大模型封装类
         """
+        pass
 
+    @abstractmethod
     def chat(self, message: str) -> str:
         """ 模型的单轮对话
 
@@ -33,7 +38,7 @@ class QwenAPI(LLM):
 
         Args:
             api_type (str, optional): 模型类型. Defaults to 'qwen-max'.
-            api_key (str, optional): API_KEY, 不输入则尝试从环境变量中获取. Defaults to None.
+            api_key (str, optional): API_KEY, 不输入则尝试从环境变量 DASHSCOPE_API_KEY 中获取. Defaults to None.
         """
         self.api_type = api_type
         if api_key is None:
@@ -82,9 +87,8 @@ class Qwen2(LLM):
             path (str): 模型名称或路径
         """
         self.path = path
-        self.device = 'cuda'
-        self.model = None
-        self.tokenizer = None
+        self.llm = vllm.LLM(model=path, tensor_parallel_size=2)
+        self.tokenizer = AutoTokenizer.from_pretrained(path)
 
     def chat(self, message: str) -> str:
         """ 模型的单轮对话
@@ -95,11 +99,10 @@ class Qwen2(LLM):
         Returns:
             str: 模型输出
         """
-        if self.model is None:
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.path, torch_dtype="auto", device_map="auto")
-        if self.tokenizer is None:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.path)
+        sampling_params = SamplingParams(temperature=0.7,
+                                         top_p=0.8,
+                                         repetition_penalty=1.05,
+                                         max_tokens=2048)
         messages = [{
             "role": "system",
             "content": "You are a helpful assistant."
@@ -110,15 +113,6 @@ class Qwen2(LLM):
         text = self.tokenizer.apply_chat_template(messages,
                                                   tokenize=False,
                                                   add_generation_prompt=True)
-        model_inputs = self.tokenizer([text],
-                                      return_tensors="pt").to(self.device)
 
-        generated_ids = self.model.generate(model_inputs.input_ids,
-                                            max_new_tokens=512)
-        generated_ids = [
-            output_ids[len(input_ids):] for input_ids, output_ids in zip(
-                model_inputs.input_ids, generated_ids)
-        ]
-        response = self.tokenizer.batch_decode(generated_ids,
-                                               skip_special_tokens=True)[0]
-        return response
+        outputs = self.llm.generate([text], sampling_params)
+        return outputs[0].outputs[0].text
