@@ -4,9 +4,10 @@ from ..llm import LLM, KnowledgepointPrompt
 import uuid
 import re
 from loguru import logger
-import os
 from abc import ABC, abstractmethod
 from .config import ignore_page, parser_log
+import random
+from collections import Counter
 
 logger.remove(0)
 logger.add(parser_log,
@@ -111,7 +112,8 @@ class Document:
                         if pg == bookmark.page_index:
                             idx = 0
                             for i, content in enumerate(page_contents):
-                                blank_pattern = re.compile(r'\s+')
+                                blank_pattern = re.compile(
+                                    r'\s+')  # 可能会包含一些空白字符这里去掉
                                 if content.type == ContentType.Title and re.sub(
                                         blank_pattern, '',
                                         content.content) == re.sub(
@@ -135,15 +137,7 @@ class Document:
                     if len(text_contents) == 0:
                         bookmark.subs = []
                         continue
-                    retry = 0
-                    while True:
-                        resp = llm.chat(prompt.get_prompt(text_contents))
-                        generate_points = prompt.post_process(resp)
-                        if len(generate_points
-                               ) <= 5 or retry >= 3:  # 生成数量过多则重试
-                            break
-                        else:
-                            retry += 1
+                    generate_points = get_knowledgepoints(text_contents)
                     logger.success('生成知识点: ' + str(generate_points))
                     subs: list[KnowledgePoint] = []
                     for generate in generate_points:
@@ -158,6 +152,51 @@ class Document:
                             subs.append(new_point)
                             points.append(new_point)
                     bookmark.subs = subs
+
+        def get_knowledgepoints(content: str,
+                                self_consistency=False,
+                                samples: int = 5) -> list[str]:
+            """ 使用 llm 生成知识点列表
+
+            Args:
+                content (str): 输入文本
+                self_consistency (bool, optional): 是否采用自我一致性策略 (需要更多的模型推理次数). Defaults to False.
+                samples (int, optional): 采样自我一致性策略的采样次数. Defaults to 5.
+
+            Returns:
+                list[str]: 生成的知识点实体列表
+            """
+            if not self_consistency:
+                # 默认策略：生成数量过多则重试，仍然过多则选择长度最长前5个
+                retry = 0
+                while True:
+                    resp = llm.chat(prompt.get_prompt(content))
+                    generate_points = prompt.post_process(resp)
+                    if len(generate_points) <= 6 or retry >= 3:
+                        break
+                    retry += 1
+                if len(generate_points) > 10:
+                    # 选择长度最长的前5个
+                    generate_points = sorted(generate_points,
+                                             key=lambda x: len(x),
+                                             reverse=True)[:5]
+                return generate_points
+            else:
+                # 自我一致性策略
+                all_generate_points = []
+                for _ in range(samples):
+                    # 进行采样
+                    resp = llm.chat(prompt.get_prompt(content))
+                    generate_points = prompt.post_process(resp)
+                    all_generate_points.append(generate_points)
+                # 选择出现次数超过半数的进行返回
+                generate_points = Counter([
+                    item for sublist in all_generate_points for item in sublist
+                ])
+                return [
+                    point for point, count in generate_points.items()
+                    if count > samples / 2
+                ]
 
         set_knowledgepoints(self.bookmarks)
 
@@ -174,6 +213,8 @@ class Document:
         def bookmarks_to_cypher(bookmarks: list[BookMark], parent_id: str):
             cyphers: list[str] = []
             for bookmark in bookmarks:
+                if bookmark.title in ignore_page:
+                    continue
                 cyphers.append(
                     f'CREATE (:Chapter {{id: "{bookmark.id}", name: "{bookmark.title}", page_start: {bookmark.page_index}, page_end: {bookmark.page_end}}})'
                 )

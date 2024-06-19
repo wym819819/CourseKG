@@ -4,6 +4,7 @@ from modelscope import AutoTokenizer, AutoModelForCausalLM
 from abc import ABC, abstractmethod
 import vllm
 from vllm import SamplingParams
+from .config import temperature, top_p, max_tokens, tensor_parallel_size
 
 
 class LLM(ABC):
@@ -71,7 +72,10 @@ class QwenAPI(LLM):
                 }]
             },
             "parameters": {
-                "result_format": "message"
+                "result_format": "message",
+                "temperature": temperature,
+                "top_p": top_p,
+                "max_tokens": max_tokens
             }
         }
         response = requests.post(url, headers=headers, json=body)
@@ -87,7 +91,8 @@ class Qwen2(LLM):
             path (str): 模型名称或路径
         """
         self.path = path
-        self.llm = vllm.LLM(model=path, tensor_parallel_size=2)
+        self.llm = vllm.LLM(model=path,
+                            tensor_parallel_size=tensor_parallel_size)
         self.tokenizer = AutoTokenizer.from_pretrained(path)
 
     def chat(self, message: str) -> str:
@@ -99,10 +104,10 @@ class Qwen2(LLM):
         Returns:
             str: 模型输出
         """
-        sampling_params = SamplingParams(temperature=0.7,
-                                         top_p=0.8,
+        sampling_params = SamplingParams(temperature=temperature,
+                                         top_p=top_p,
                                          repetition_penalty=1.05,
-                                         max_tokens=2048)
+                                         max_tokens=max_tokens)
         messages = [{
             "role": "system",
             "content": "You are a helpful assistant."
