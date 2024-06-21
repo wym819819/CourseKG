@@ -167,7 +167,7 @@ class Document:
                 list[str]: 生成的知识点实体列表
             """
             if not self_consistency:
-                # 默认策略：生成数量过多则重试，仍然过多则选择长度最长前5个
+                # 默认策略：生成数量过多则重试，否则仍然过多则选择长度最长前5个
                 retry = 0
                 while True:
                     resp = llm.chat(prompt.get_prompt(content))
@@ -189,7 +189,7 @@ class Document:
                     resp = llm.chat(prompt.get_prompt(content))
                     generate_points = prompt.post_process(resp)
                     all_generate_points.append(generate_points)
-                # 选择出现次数超过半数的进行返回
+                # 选择出现次数超过半数的进行返回 (实体级别SC分数过滤)
                 generate_points = Counter([
                     item for sublist in all_generate_points for item in sublist
                 ])

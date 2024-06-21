@@ -4,7 +4,7 @@ from modelscope import AutoTokenizer, AutoModelForCausalLM
 from abc import ABC, abstractmethod
 import vllm
 from vllm import SamplingParams
-from .config import temperature, top_p, max_tokens, tensor_parallel_size
+from .config import *
 
 
 class LLM(ABC):
@@ -75,7 +75,10 @@ class QwenAPI(LLM):
                 "result_format": "message",
                 "temperature": temperature,
                 "top_p": top_p,
-                "max_tokens": max_tokens
+                "top_k": top_k,
+                "max_tokens": max_tokens,
+                "repetition_penalty": repetition_penalty,
+                "presence_penalty": presence_penalty
             }
         }
         response = requests.post(url, headers=headers, json=body)
@@ -106,8 +109,10 @@ class Qwen2(LLM):
         """
         sampling_params = SamplingParams(temperature=temperature,
                                          top_p=top_p,
-                                         repetition_penalty=1.05,
-                                         max_tokens=max_tokens)
+                                         top_k=top_k,
+                                         repetition_penalty=repetition_penalty,
+                                         max_tokens=max_tokens,
+                                         presence_penalty=presence_penalty)
         messages = [{
             "role": "system",
             "content": "You are a helpful assistant."
