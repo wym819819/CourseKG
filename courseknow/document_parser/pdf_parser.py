@@ -1,4 +1,5 @@
 from .base import *
+from .parser import Parser, Page
 
 import fitz
 from paddleocr import PPStructure

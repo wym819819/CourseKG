@@ -1,6 +1,6 @@
 import os
 import requests
-from modelscope import AutoTokenizer, AutoModelForCausalLM
+from modelscope import AutoTokenizer
 from abc import ABC, abstractmethod
 import vllm
 from vllm import SamplingParams
@@ -34,17 +34,22 @@ class QwenAPI(LLM):
 
     def __init__(self,
                  api_type: str = 'qwen-max',
-                 api_key: str = None) -> None:
+                 api_key: str = None,
+                 url: str = None) -> None:
         """ Qwen 系列模型 API 服务
 
         Args:
             api_type (str, optional): 模型类型. Defaults to 'qwen-max'.
             api_key (str, optional): API_KEY, 不输入则尝试从环境变量 DASHSCOPE_API_KEY 中获取. Defaults to None.
+            url (str, optional): 请求地址, 不输入则尝使用阿里云官方地址. Defaults to None.
         """
         self.api_type = api_type
         if api_key is None:
             api_key = os.getenv("DASHSCOPE_API_KEY")
         self.api_key = api_key
+        if url is None:
+            url = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
+        self.url = url
 
     def chat(self, message: str) -> str:
         """ 模型的单轮对话
@@ -55,7 +60,6 @@ class QwenAPI(LLM):
         Returns:
             str: 模型输出
         """
-        url = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.api_key}'
@@ -81,8 +85,11 @@ class QwenAPI(LLM):
                 "presence_penalty": presence_penalty
             }
         }
-        response = requests.post(url, headers=headers, json=body)
-        return response.json()['output']['choices'][0]['message']['content']
+        response = requests.post(self.url, headers=headers, json=body)
+        output = response.json().get('output', '')
+        if output:
+            return output['choices'][0]['message']['content']
+        return output
 
 
 class Qwen2(LLM):

@@ -1,13 +1,12 @@
 from dataclasses import dataclass
-from enum import Enum
-from ..llm import LLM, KnowledgepointPrompt
+from ..llm import LLM, Prompt
 import uuid
 import re
 from loguru import logger
-from abc import ABC, abstractmethod
 from .config import ignore_page, parser_log
 import random
 from collections import Counter
+from .parser import Content, ContentType, Parser
 
 logger.remove(0)
 logger.add(parser_log,
@@ -15,27 +14,34 @@ logger.add(parser_log,
            mode="w")
 
 
-class ContentType(Enum):
-    """ 内容类型
-    """
-    Text = 1
-    Title = 2
-
-
 @dataclass
-class Content:
-    """ 内容
-    """
-    type: ContentType
-    content: str
-
-
-@dataclass
-class KnowledgePoint:
-    """ 知识点
+class KPEntity:
+    """ 知识点实体
     """
     id: str
     name: str
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, KPEntity):
+            return self.id == other.id
+        return False
+
+
+@dataclass
+class KPRelation:
+    """ 知识点关系
+    """
+    id: str
+    type_name: str
+
+
+@dataclass
+class KPTriple:
+    """ 知识点三元组
+    """
+    head: KPEntity
+    relation: KPRelation
+    tail: KPRelation
 
 
 @dataclass
@@ -47,7 +53,7 @@ class BookMark:
     page_index: int
     page_end: int
     level: int
-    subs: list['BookMark'] | list[KnowledgePoint] | None
+    subs: list['BookMark'] | list[KPTriple] | None
 
     def set_page_end(self, page_end: int) -> None:
         """ 设置书签的结束页, 和直接修改 BookMark 对象的 page_end 属性不同, 该方法会考虑到书签嵌套的情况
@@ -82,17 +88,25 @@ class Document:
     id: str
     name: str
     bookmarks: list[BookMark]
-    parser: 'Parser'
+    parser: Parser
 
-    def set_knowledgepoints_by_llm(self, llm: LLM,
-                                   prompt: KnowledgepointPrompt) -> None:
+    def set_knowledgepoints_by_llm(self,
+                                   llm: LLM,
+                                   prompt: Prompt,
+                                   self_consistency=False,
+                                   samples: int = 5,
+                                   top: float = 0.5) -> None:
         """ 使用 LLM 抽取知识点存储到 BookMark 中
 
         Args:
             llm (LLM): 指定 LLM
-            domain (str): 知识点相关的领域
+            prompt (Prompt): 使用的提示词类
+            self_consistency (bool, optional): 是否采用自我一致性策略 (需要更多的模型推理次数). Defaults to False.
+            samples (int, optional): 采样自我一致性策略的采样次数. Defaults to 5.
+            top (float, optional): 采样自我一致性策略时，出现次数超过 top * samples 时才会被采纳，范围为 [0, 1]. Defaults to 0.5.
         """
-        points: list[KnowledgePoint] = []
+
+        entitys: list[KPEntity] = []  # 复用知识点实体
 
         def set_knowledgepoints(bookmarks: list[BookMark]) -> None:
             for bookmark in bookmarks:
@@ -137,77 +151,96 @@ class Document:
                     if len(text_contents) == 0:
                         bookmark.subs = []
                         continue
-                    generate_points = get_knowledgepoints(text_contents)
-                    logger.success('生成知识点: ' + str(generate_points))
-                    subs: list[KnowledgePoint] = []
-                    for generate in generate_points:
-                        for point in points:
-                            if generate == point.name:
-                                subs.append(point)
+                    generate: list[list[
+                        str]] = get_knowledgepoints(  # [head: str, relation: str, tail: str]
+                            text_contents,
+                            self_consistency=self_consistency,
+                            samples=samples,
+                            top=top)
+                    logger.success('生成知识点三元组: ' + str(generate))
+                    subs: list[KPTriple] = []
+                    for triple in generate:
+                        head, tail = None, None
+                        for entity in entitys:
+                            if triple[0] == entity.name:  # 需要实体归一化
+                                head = entity
                                 break
                         else:
-                            new_point = KnowledgePoint(id='2:' +
-                                                       str(uuid.uuid4()),
-                                                       name=generate)
-                            subs.append(new_point)
-                            points.append(new_point)
+                            head = KPEntity(id='2:' + str(uuid.uuid4()),
+                                            name=triple[0])
+                            entitys.append(head)
+                        for entity in entitys:
+                            if triple[2] == entity.name:
+                                tail = entity
+                                break
+                        else:
+                            tail = KPEntity(id='2:' + str(uuid.uuid4()),
+                                            name=triple[2])
+                            entitys.append(tail)
+                        subs.append(
+                            KPTriple(head=head,
+                                     tail=tail,
+                                     relation=KPRelation(id='4:' +
+                                                         str(uuid.uuid4()),
+                                                         type_name=triple[1])))
                     bookmark.subs = subs
 
         def get_knowledgepoints(content: str,
                                 self_consistency=False,
-                                samples: int = 5) -> list[str]:
-            """ 使用 llm 生成知识点列表
+                                samples: int = 5,
+                                top: float = 0.5) -> list[str]:
+            """ 使用 llm 生成知识点三元组列表
 
             Args:
                 content (str): 输入文本
                 self_consistency (bool, optional): 是否采用自我一致性策略 (需要更多的模型推理次数). Defaults to False.
-                samples (int, optional): 采样自我一致性策略的采样次数. Defaults to 5.
+                samples (int, optional): 采用自我一致性策略的采样次数. Defaults to 5.
+                top (float, optional): 采样自我一致性策略时，出现次数超过 top * samples 时才会被采纳. Defaults to 0.5.
 
             Returns:
-                list[str]: 生成的知识点实体列表
+                list[str]: 生成的知识点三元组列表
             """
             if not self_consistency:
                 # 默认策略：生成数量过多则重试，否则仍然过多则选择长度最长前5个
                 retry = 0
                 while True:
                     resp = llm.chat(prompt.get_prompt(content))
-                    generate_points = prompt.post_process(resp)
-                    if len(generate_points) <= 6 or retry >= 3:
+                    generate: list[list[str]] = prompt.post_process(resp)
+                    if len(generate) <= 8 or retry >= 3:
                         break
                     retry += 1
-                if len(generate_points) > 10:
-                    # 选择长度最长的前5个
-                    generate_points = sorted(generate_points,
-                                             key=lambda x: len(x),
-                                             reverse=True)[:5]
-                return generate_points
+                if len(generate) > 10:
+                    # 随机选择5个
+                    generate = random.sample(generate, 5)
+                return generate
             else:
                 # 自我一致性策略
-                all_generate_points = []
-                for _ in range(samples):
+                all_generate = []
+                for idx in range(samples):
                     # 进行采样
                     resp = llm.chat(prompt.get_prompt(content))
-                    generate_points = prompt.post_process(resp)
-                    all_generate_points.append(generate_points)
-                # 选择出现次数超过半数的进行返回 (实体级别SC分数过滤)
-                generate_points = Counter([
-                    item for sublist in all_generate_points for item in sublist
-                ])
+                    logger.info(f'第{idx}次采样: ' + resp)
+                    generate = prompt.post_process(resp)
+                    logger.info(f'获取知识点三元组: ' + str(generate))
+                    all_generate.append(generate)
+                # 选择出现次数超过半数的进行返回 (SC分数过滤)
+                generate = Counter(
+                    [item for sublist in all_generate for item in sublist])
                 return [
-                    point for point, count in generate_points.items()
-                    if count > samples / 2
+                    point for point, count in generate.items()
+                    if count > (samples * top)
                 ]
 
         set_knowledgepoints(self.bookmarks)
 
     def get_cyphers(self) -> list[str]:
-        """ 将章节与知识点之间的关联关系存入图数据库中
+        """ 将整体的关联关系存入图数据库中
 
         Returns:
             list[str]: 多条 cypher 语句
         """
 
-        created_knowledgepoint_ids = []
+        created_entity_ids = []
         cypher = f'CREATE (:Document {{id: "{self.id}", name: "{self.name}"}})'
 
         def bookmarks_to_cypher(bookmarks: list[BookMark], parent_id: str):
@@ -219,104 +252,34 @@ class Document:
                     f'CREATE (:Chapter {{id: "{bookmark.id}", name: "{bookmark.title}", page_start: {bookmark.page_index}, page_end: {bookmark.page_end}}})'
                 )
                 cyphers.append(  # 这里写不写类别无所谓
-                    f'MATCH (n1 {{id: "{parent_id}"}}) MATCH (n2:Chapter {{id: "{bookmark.id}"}}) CREATE (n1)-[:SubChapter {{name: "子章节"}}]->(n2)'
+                    f'MATCH (n1 {{id: "{parent_id}"}}) MATCH (n2:Chapter {{id: "{bookmark.id}"}}) CREATE (n1)-[:子章节]->(n2)'
                 )
                 if bookmark.subs and isinstance(bookmark.subs[-1], BookMark):
                     cyphers.extend(
                         bookmarks_to_cypher(bookmark.subs, bookmark.id))
-                elif bookmark.subs and isinstance(bookmark.subs[-1],
-                                                  KnowledgePoint):
-                    for point in bookmark.subs:
-                        if point.id in created_knowledgepoint_ids:
+                elif bookmark.subs and isinstance(bookmark.subs[-1], KPTriple):
+                    entitys: list[KPEntity] = []  # 复用知识点实体
+                    for triple in bookmark.subs:
+                        if triple.head not in entitys:
+                            entitys.append(triple.head)
+                        if triple.tail not in entitys:
+                            entitys.append(triple.tail)
+                    for entity in entitys:
+                        if entity.id in created_entity_ids:
                             cyphers.append(
-                                f'MATCH (n1:Chapter {{id: "{bookmark.id}"}}) MATCH (n2:KnowledgePoint {{id: "{point.id}"}}) CREATE (n1)-[:Has {{name: "提到知识点"}}]->(n2)'
+                                f'MATCH (n1:Chapter {{id: "{bookmark.id}"}}) MATCH (n2:KnowledgePoint {{id: "{entity.id}"}}) CREATE (n1)-[:提到知识点]->(n2)'
                             )
                         else:
                             cyphers.append(
-                                f'MATCH (n1:Chapter {{id: "{bookmark.id}"}}) CREATE (n2:KnowledgePoint {{id: "{point.id}", name: "{point.name}"}}) CREATE (n1)-[:Has {{name: "提到知识点"}}]->(n2)'
+                                f'MATCH (n1:Chapter {{id: "{bookmark.id}"}}) CREATE (n2:KnowledgePoint {{id: "{entity.id}", name: "{entity.name}"}}) CREATE (n1)-[:提到知识点]->(n2)'
                             )
-                            created_knowledgepoint_ids.append(point.id)
+                            created_entity_ids.append(entity.id)
+                    for triple in bookmark.subs:
+                        cyphers.append(
+                            f'MATCH (n1:KnowledgePoint {{id: "{triple.head.id}"}}) MATCH (n2:KnowledgePoint {{id: "{triple.tail.id}"}}) CREATE (n1)-[:{triple.relation.type_name} {{id: "{triple.relation.id}"}}]->(n2)'
+                        )
             return cyphers
 
         cyphers = [cypher]
         cyphers.extend(bookmarks_to_cypher(self.bookmarks, self.id))
         return cyphers
-
-
-@dataclass
-class Page:
-    """ 页面
-    """
-    page_index: int
-    contents: list[Content]
-
-
-class Parser(ABC):
-
-    def __init__(self, file_path: str) -> None:
-        """ 文档解析器基类
-
-        Args:
-            file_path (str): 文档路径
-        """
-        self.file_path = file_path
-
-    def __enter__(self) -> 'Parser':
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.close()
-
-    @abstractmethod
-    def close(self) -> None:
-        """ 关闭文档
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_bookmarks(self) -> list[BookMark]:
-        """  获取pdf文档书签
-
-        Returns:
-            list[BookMark]: 书签列表
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_page(self, page_index: int) -> Page:
-        """ 获取文档页面
-
-        Args:
-            page_index (int): 页码, 从0开始计数
-
-        Raises:
-            NotImplementedError: 子类需要实现该方法
-
-        Returns:
-            Page: 文档页面
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_pages(self) -> list[Page]:
-        """ 获取文档所有页面
-
-        Raises:
-            NotImplementedError: 子类需要实现该方法
-
-        Returns:
-            list[Page]: 页面列表
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_document(self) -> Document:
-        """ 获取文档
-
-        Raises:
-            NotImplementedError: 子类需要实现该方法
-
-        Returns:
-            Document: 文档
-        """
-        raise NotImplementedError
