@@ -1,4 +1,4 @@
-temperature = 0.7  # 取值越大softmax函数概率分布越平缓
+temperature = 0.4  # 取值越大softmax函数概率分布越平缓
 top_p = 0.8  # 候选集仅保留累计概率之和大于等于top_p的顺序部分
 top_k = 50  # 候选集仅保留概率最高的前top_k个，有限使用top_p
 max_tokens = 2000  # 生成文本的最大长度

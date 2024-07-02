@@ -1,12 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from ..llm import LLM, Prompt
 import uuid
 import re
 from loguru import logger
 from .config import ignore_page, parser_log
-import random
 from collections import Counter
 from .parser import Content, ContentType, Parser
+import random
 
 logger.remove(0)
 logger.add(parser_log,
@@ -16,32 +16,18 @@ logger.add(parser_log,
 
 @dataclass
 class KPEntity:
-    """ 知识点实体
-    """
     id: str
     name: str
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, KPEntity):
-            return self.id == other.id
-        return False
+    relations: list['KPRelation'] = field(default_factory=list)
+    attributes: dict[str, list] | dict[str, str] = field(default_factory=dict)  # 同一个属性可能会存在多个属性值, 后续选择一个最好的值
 
 
 @dataclass
 class KPRelation:
-    """ 知识点关系
-    """
     id: str
-    type_name: str
-
-
-@dataclass
-class KPTriple:
-    """ 知识点三元组
-    """
-    head: KPEntity
-    relation: KPRelation
-    tail: KPRelation
+    type: str
+    tail: KPEntity
+    attributes: dict[str, list] | dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -53,7 +39,7 @@ class BookMark:
     page_index: int
     page_end: int
     level: int
-    subs: list['BookMark'] | list[KPTriple] | None
+    subs: list['BookMark'] | list[KPEntity] | None
 
     def set_page_end(self, page_end: int) -> None:
         """ 设置书签的结束页, 和直接修改 BookMark 对象的 page_end 属性不同, 该方法会考虑到书签嵌套的情况
@@ -65,21 +51,6 @@ class BookMark:
         if self.subs and isinstance(self.subs[-1], BookMark):
             self.subs[-1].set_page_end(page_end)
 
-    def to_dict(self) -> dict:
-        """ 将 BookMark 对象转换为 dict 形式
-
-        Returns:
-            dict: dict 形式
-        """
-        return {
-            'title':
-            self.title,
-            'page_range':
-            f'[{self.page_index}, {self.page_end}]',
-            'subs': [sub.to_dict()
-                     for sub in self.subs] if self.subs is not None else []
-        }
-
 
 @dataclass
 class Document:
@@ -89,11 +60,12 @@ class Document:
     name: str
     bookmarks: list[BookMark]
     parser: Parser
+    knowledgepoints: list[KPEntity] = field(default_factory=list)
 
     def set_knowledgepoints_by_llm(self,
                                    llm: LLM,
                                    prompt: Prompt,
-                                   self_consistency=False,
+                                   self_consistency: bool = False,
                                    samples: int = 5,
                                    top: float = 0.5) -> None:
         """ 使用 LLM 抽取知识点存储到 BookMark 中
@@ -106,8 +78,6 @@ class Document:
             top (float, optional): 采样自我一致性策略时，出现次数超过 top * samples 时才会被采纳，范围为 [0, 1]. Defaults to 0.5.
         """
 
-        entitys: list[KPEntity] = []  # 复用知识点实体
-
         def set_knowledgepoints(bookmarks: list[BookMark]) -> None:
             for bookmark in bookmarks:
                 if bookmark.title in ignore_page:
@@ -118,6 +88,7 @@ class Document:
                     logger.success('子章节: ' + bookmark.title)
                     # 获取书签对应的页面内容
                     contents: list[Content] = []
+                    # 后续这个地方可以并行执行
                     for pg in range(bookmark.page_index,
                                     bookmark.page_end + 1):
 
@@ -131,7 +102,7 @@ class Document:
                                 if content.type == ContentType.Title and re.sub(
                                         blank_pattern, '',
                                         content.content) == re.sub(
-                                            blank_pattern, '', bookmark.title):
+                                        blank_pattern, '', bookmark.title):
                                     idx = i + 1
                                     break
                             page_contents = page_contents[idx:]
@@ -151,45 +122,18 @@ class Document:
                     if len(text_contents) == 0:
                         bookmark.subs = []
                         continue
-                    generate: list[list[
-                        str]] = get_knowledgepoints(  # [head: str, relation: str, tail: str]
-                            text_contents,
-                            self_consistency=self_consistency,
-                            samples=samples,
-                            top=top)
-                    logger.success('生成知识点三元组: ' + str(generate))
-                    subs: list[KPTriple] = []
-                    for triple in generate:
-                        head, tail = None, None
-                        for entity in entitys:
-                            if triple[0] == entity.name:  # 需要实体归一化
-                                head = entity
-                                break
-                        else:
-                            head = KPEntity(id='2:' + str(uuid.uuid4()),
-                                            name=triple[0])
-                            entitys.append(head)
-                        for entity in entitys:
-                            if triple[2] == entity.name:
-                                tail = entity
-                                break
-                        else:
-                            tail = KPEntity(id='2:' + str(uuid.uuid4()),
-                                            name=triple[2])
-                            entitys.append(tail)
-                        subs.append(
-                            KPTriple(head=head,
-                                     tail=tail,
-                                     relation=KPRelation(id='4:' +
-                                                         str(uuid.uuid4()),
-                                                         type_name=triple[1])))
-                    bookmark.subs = subs
+                    entities: list[KPEntity] = get_knowledgepoints(
+                        text_contents,
+                        self_consistency=self_consistency,
+                        samples=samples,
+                        top=top)
+                    bookmark.subs = entities
 
         def get_knowledgepoints(content: str,
                                 self_consistency=False,
                                 samples: int = 5,
-                                top: float = 0.5) -> list[str]:
-            """ 使用 llm 生成知识点三元组列表
+                                top: float = 0.5) -> list[KPEntity]:
+            """ 使用 llm 生成知识点实体和与其相关的关系关系、属性
 
             Args:
                 content (str): 输入文本
@@ -198,40 +142,107 @@ class Document:
                 top (float, optional): 采样自我一致性策略时，出现次数超过 top * samples 时才会被采纳. Defaults to 0.5.
 
             Returns:
-                list[str]: 生成的知识点三元组列表
+                list[KPEntity]: 生成的知识点实体
             """
+            # 实体抽取
             if not self_consistency:
-                # 默认策略：生成数量过多则重试，否则仍然过多则选择长度最长前5个
+                # 默认策略：生成数量过多则重试，否则随机选择5个
                 retry = 0
                 while True:
-                    resp = llm.chat(prompt.get_prompt(content))
-                    generate: list[list[str]] = prompt.post_process(resp)
-                    if len(generate) <= 8 or retry >= 3:
+                    resp = llm.chat(prompt.get_ner_prompt(content))
+                    entities_name: list[str] = prompt.post_process(resp)
+                    if len(entities_name) <= 8 or retry >= 3:
                         break
                     retry += 1
-                if len(generate) > 10:
-                    # 随机选择5个
-                    generate = random.sample(generate, 5)
-                return generate
+                if len(entities_name) > 10:
+                    entities_name = random.sample(entities_name, 5)
             else:
-                # 自我一致性策略
-                all_generate = []
+                # 自我一致性验证
+                all_entities_name: list[str] = []
                 for idx in range(samples):
-                    # 进行采样
-                    resp = llm.chat(prompt.get_prompt(content))
+                    resp = llm.chat(prompt.get_ner_prompt(content))
                     logger.info(f'第{idx}次采样: ' + resp)
-                    generate = prompt.post_process(resp)
-                    logger.info(f'获取知识点三元组: ' + str(generate))
-                    all_generate.append(generate)
-                # 选择出现次数超过半数的进行返回 (SC分数过滤)
-                generate = Counter(
-                    [item for sublist in all_generate for item in sublist])
-                return [
-                    point for point, count in generate.items()
+                    entities_name = prompt.post_process(resp)
+                    if isinstance(entities_name, dict):
+                        continue
+                    logger.info(f'获取知识点实体: ' + str(entities_name))
+                    all_entities_name.extend(entities_name)
+                counter = Counter(all_entities_name)
+                entities_name = [
+                    point for point, count in counter.items()
                     if count > (samples * top)
                 ]
+            entities: list[KPEntity] = []
+            for name in entities_name:
+                # 复用知识点实体
+                for kp in self.knowledgepoints:
+                    if name == kp.name:
+                        entities.append(kp)
+                        break
+                else:
+                    kp = KPEntity(id='2:' + str(uuid.uuid4()),
+                                  name=name)
+                    self.knowledgepoints.append(kp)
+                    entities.append(kp)
+            logger.info(f'最终获取知识点实体: ' + str(entities_name))
+            # 属性抽取
+            attrs = prompt.post_process(llm.chat(prompt.get_ae_prompt(content, entities_name)))  # {'entity': {'attr': ''}}
+            logger.info(f'获取知识点属性: ' + str(attrs))
+            if not isinstance(attrs, dict):
+                pass
+            else:
+                for name, attr in attrs.items():
+                    # 在实体列表中找到名称匹配的实体
+                    entity = next((e for e in entities if e.name == name), None)
+                    if entity:
+                        # 设置相应的属性值
+                        for attr_name, value in attr.items():
+                            if attr_name not in entity.attributes:
+                                entity.attributes[attr_name] = [value]
+                            else:
+                                entity.attributes[attr_name].append(value)
+            # 关系抽取
+            # 关系抽取有强烈的NULL倾向 关系也可以做SC
+            if len(entities_name) <= 1:
+                pass
+            else:
+                relations = prompt.post_process(llm.chat(prompt.get_re_prompt(content, entities_name)))
+                logger.info(f'获取关系三元组: ' + str(relations))
+                for rela in relations:  # list[{'head':'', 'relation':'', 'tail':''}]
+                    head, tail = None, None
+                    for entity in entities:
+                        if entity.name == rela.get('head', None):
+                            head = entity
+                            break
+                    for entity in entities:
+                        if entity.name == rela.get('tail', None):
+                            tail = entity
+                            break
+                    if head and tail:
+                        for relation in head.relations:
+                            if relation.type == rela.get('relation', None) and relation.tail.name == tail.name:  # 确保没有重复的关系
+                                break
+                        else:
+                            head.relations.append(KPRelation(
+                                id='3:' + str(uuid.uuid4()), type=rela['relation'], tail=tail
+                            ))
+
+            return entities
 
         set_knowledgepoints(self.bookmarks)
+
+        # 选择最好的属性值，暂时随机选择
+        for entity in self.knowledgepoints:
+            for attr, value_list in entity.attributes.items():
+                if len(value_list) == 1:
+                    entity.attributes[attr] = value_list[0]
+                else:
+                    try:
+                        idx = int(prompt.get_best_attr(entity.name, attr, value_list))
+                        entity.attributes[attr] = value_list[idx]
+                    except ValueError:  # 解析失败则随机选择
+                        entity.attributes[attr] = random.choice(value_list)
+                logger.info(f'实体: {entity.name} 属性: {attr} 值: {entity.attributes[attr]}')
 
     def get_cyphers(self) -> list[str]:
         """ 将整体的关联关系存入图数据库中
@@ -240,46 +251,43 @@ class Document:
             list[str]: 多条 cypher 语句
         """
 
-        created_entity_ids = []
-        cypher = f'CREATE (:Document {{id: "{self.id}", name: "{self.name}"}})'
+        cyphers = [f'CREATE (:Document {{id: "{self.id}", name: "{self.name}"}})']
+        # 创建所有知识点实体和实体属性
+        for entity in self.knowledgepoints:
+            attrs = str(entity.attributes).replace("'", '"')[1:-1]  # 去掉字典两端的括号, 单引号转换为双引号
+            cyphers.append(
+                f'CREATE (:KnowledgePoint {{id: "{entity.id}", name: "{entity.name}", {attrs} }})'
+            )
+        # 创建所有知识点关联
+        for entity in self.knowledgepoints:
+            for relation in entity.relations:
+                cyphers.append(
+                    f'MATCH (n1:KnowledgePoint {{id: "{entity.id}") MATCH (n2:KnowledgePoint {{id: "{relation.tail.id}") CREATE (n1)-[:{relation.type} {relation.attributes}]->(n2)'
+                )
 
         def bookmarks_to_cypher(bookmarks: list[BookMark], parent_id: str):
             cyphers: list[str] = []
             for bookmark in bookmarks:
                 if bookmark.title in ignore_page:
                     continue
+                # 创建章节实体
                 cyphers.append(
                     f'CREATE (:Chapter {{id: "{bookmark.id}", name: "{bookmark.title}", page_start: {bookmark.page_index}, page_end: {bookmark.page_end}}})'
                 )
-                cyphers.append(  # 这里写不写类别无所谓
+                # 创建章节和上级章节 (书籍) 关联, 所以不写类别
+                cyphers.append(
                     f'MATCH (n1 {{id: "{parent_id}"}}) MATCH (n2:Chapter {{id: "{bookmark.id}"}}) CREATE (n1)-[:子章节]->(n2)'
                 )
                 if bookmark.subs and isinstance(bookmark.subs[-1], BookMark):
                     cyphers.extend(
                         bookmarks_to_cypher(bookmark.subs, bookmark.id))
-                elif bookmark.subs and isinstance(bookmark.subs[-1], KPTriple):
-                    entitys: list[KPEntity] = []  # 复用知识点实体
-                    for triple in bookmark.subs:
-                        if triple.head not in entitys:
-                            entitys.append(triple.head)
-                        if triple.tail not in entitys:
-                            entitys.append(triple.tail)
-                    for entity in entitys:
-                        if entity.id in created_entity_ids:
-                            cyphers.append(
-                                f'MATCH (n1:Chapter {{id: "{bookmark.id}"}}) MATCH (n2:KnowledgePoint {{id: "{entity.id}"}}) CREATE (n1)-[:提到知识点]->(n2)'
-                            )
-                        else:
-                            cyphers.append(
-                                f'MATCH (n1:Chapter {{id: "{bookmark.id}"}}) CREATE (n2:KnowledgePoint {{id: "{entity.id}", name: "{entity.name}"}}) CREATE (n1)-[:提到知识点]->(n2)'
-                            )
-                            created_entity_ids.append(entity.id)
-                    for triple in bookmark.subs:
+                # 创建章节和知识点之间关联
+                elif bookmark.subs and isinstance(bookmark.subs[-1], KPEntity):
+                    for entity in bookmark.subs:
                         cyphers.append(
-                            f'MATCH (n1:KnowledgePoint {{id: "{triple.head.id}"}}) MATCH (n2:KnowledgePoint {{id: "{triple.tail.id}"}}) CREATE (n1)-[:{triple.relation.type_name} {{id: "{triple.relation.id}"}}]->(n2)'
+                            f'MATCH (n1:Chapter {{id: "{bookmark.id}"}}) MATCH (n2:KnowledgePoint {{id: "{entity.id}"}}) CREATE (n1)-[:提到知识点]->(n2)'
                         )
             return cyphers
 
-        cyphers = [cypher]
         cyphers.extend(bookmarks_to_cypher(self.bookmarks, self.id))
         return cyphers

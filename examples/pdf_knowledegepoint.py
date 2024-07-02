@@ -5,16 +5,19 @@ sys.path.append(os.getcwd())
 
 from courseknow.document_parser import PDFParser
 from courseknow.database import Neo4j
-from courseknow.llm import CoTPrompt, QwenAPI
+from courseknow.llm import CoTPrompt, VLLM
 
-qwen = QwenAPI(api_type='qwen-max-0403')
+
+model = VLLM('model/Qwen/Qwen2-7B-Instruct')
 neo = Neo4j('http://10.4.3.67:7474', 'neo4j', 'neo4j')
-files = ['assets/机器学习.pdf']
+files = ['assets/深度学习入门：基于Python的理论与实现.pdf', 'assets/机器学习.pdf']
 
 for file in files:
     with PDFParser(file) as parser:
         document = parser.get_document()
-        document.set_knowledgepoints_by_llm(qwen,
-                                            CoTPrompt(example=False),
-                                            self_consistency=False)
+        document.set_knowledgepoints_by_llm(model,
+                                            CoTPrompt(),
+                                            self_consistency=True,
+                                            samples=6,
+                                            top=0.8)
         neo.run(document.get_cyphers())
