@@ -1,11 +1,10 @@
 from dataclasses import dataclass, field
 from ..llm import LLM, Prompt
 import uuid
-import re
 from loguru import logger
 from .config import ignore_page, parser_log
 from collections import Counter
-from .parser import Content, ContentType, Parser
+from .parser import Parser
 import random
 
 logger.remove(0)
@@ -19,7 +18,8 @@ class KPEntity:
     id: str
     name: str
     relations: list['KPRelation'] = field(default_factory=list)
-    attributes: dict[str, list] | dict[str, str] = field(default_factory=dict)  # 同一个属性可能会存在多个属性值, 后续选择一个最好的值
+    attributes: dict[str, list] | dict[str, str] = field(
+        default_factory=dict)  # 同一个属性可能会存在多个属性值, 后续选择一个最好的值
 
 
 @dataclass
@@ -39,7 +39,7 @@ class BookMark:
     page_index: int
     page_end: int
     level: int
-    subs: list['BookMark'] | list[KPEntity] | None
+    subs: list['BookMark'] | list[KPEntity]
 
     def set_page_end(self, page_end: int) -> None:
         """ 设置书签的结束页, 和直接修改 BookMark 对象的 page_end 属性不同, 该方法会考虑到书签嵌套的情况
@@ -86,35 +86,7 @@ class Document:
                     set_knowledgepoints(bookmark.subs)
                 else:
                     logger.success('子章节: ' + bookmark.title)
-                    # 获取书签对应的页面内容
-                    contents: list[Content] = []
-                    # 后续这个地方可以并行执行
-                    for pg in range(bookmark.page_index,
-                                    bookmark.page_end + 1):
-
-                        # 起始页内容定位
-                        page_contents = self.parser.get_page(pg).contents
-                        if pg == bookmark.page_index:
-                            idx = 0
-                            for i, content in enumerate(page_contents):
-                                blank_pattern = re.compile(
-                                    r'\s+')  # 可能会包含一些空白字符这里去掉
-                                if content.type == ContentType.Title and re.sub(
-                                        blank_pattern, '',
-                                        content.content) == re.sub(
-                                        blank_pattern, '', bookmark.title):
-                                    idx = i + 1
-                                    break
-                            page_contents = page_contents[idx:]
-                        # 终止页内容定位
-                        if pg == bookmark.page_end:
-                            idx = len(page_contents)
-                            for i, content in enumerate(page_contents):
-                                if content.type == ContentType.Title:  # 直到遇到下一个标题为止
-                                    idx = i
-                                    break
-                            page_contents = page_contents[:idx]
-                        contents.extend(page_contents)
+                    contents = self.parser.get_content(bookmark)
                     text_contents = '\n'.join(
                         [content.content for content in contents])
                     # 防止生成全空白
@@ -180,20 +152,22 @@ class Document:
                         entities.append(kp)
                         break
                 else:
-                    kp = KPEntity(id='2:' + str(uuid.uuid4()),
-                                  name=name)
+                    kp = KPEntity(id='2:' + str(uuid.uuid4()), name=name)
                     self.knowledgepoints.append(kp)
                     entities.append(kp)
             logger.info(f'最终获取知识点实体: ' + str(entities_name))
             # 属性抽取
-            attrs = prompt.post_process(llm.chat(prompt.get_ae_prompt(content, entities_name)))  # {'entity': {'attr': ''}}
+            attrs = prompt.post_process(
+                llm.chat(prompt.get_ae_prompt(
+                    content, entities_name)))  # {'entity': {'attr': ''}}
             logger.info(f'获取知识点属性: ' + str(attrs))
             if not isinstance(attrs, dict):
                 pass
             else:
                 for name, attr in attrs.items():
                     # 在实体列表中找到名称匹配的实体
-                    entity = next((e for e in entities if e.name == name), None)
+                    entity = next((e for e in entities if e.name == name),
+                                  None)
                     if entity:
                         # 设置相应的属性值
                         for attr_name, value in attr.items():
@@ -206,7 +180,8 @@ class Document:
             if len(entities_name) <= 1:
                 pass
             else:
-                relations = prompt.post_process(llm.chat(prompt.get_re_prompt(content, entities_name)))
+                relations = prompt.post_process(
+                    llm.chat(prompt.get_re_prompt(content, entities_name)))
                 logger.info(f'获取关系三元组: ' + str(relations))
                 for rela in relations:  # list[{'head':'', 'relation':'', 'tail':''}]
                     head, tail = None, None
@@ -220,29 +195,37 @@ class Document:
                             break
                     if head and tail:
                         for relation in head.relations:
-                            if relation.type == rela.get('relation', None) and relation.tail.name == tail.name:  # 确保没有重复的关系
+                            if relation.type == rela.get(
+                                    'relation', None
+                            ) and relation.tail.name == tail.name:  # 确保没有重复的关系
                                 break
                         else:
-                            head.relations.append(KPRelation(
-                                id='3:' + str(uuid.uuid4()), type=rela['relation'], tail=tail
-                            ))
+                            head.relations.append(
+                                KPRelation(id='3:' + str(uuid.uuid4()),
+                                           type=rela['relation'],
+                                           tail=tail))
 
             return entities
 
         set_knowledgepoints(self.bookmarks)
 
-        # 选择最好的属性值，暂时随机选择
+        # 选择最好的属性值
         for entity in self.knowledgepoints:
             for attr, value_list in entity.attributes.items():
                 if len(value_list) == 1:
                     entity.attributes[attr] = value_list[0]
                 else:
+                    resp = prompt.get_best_attr(entity.name, attr,
+                                                value_list)
                     try:
-                        idx = int(prompt.get_best_attr(entity.name, attr, value_list))
+                        idx = int(resp)
                         entity.attributes[attr] = value_list[idx]
-                    except ValueError:  # 解析失败则随机选择
+                    except ValueError:  # 解析失败，模型回答非纯数字，则随机选择
+                        logger.error(resp)
                         entity.attributes[attr] = random.choice(value_list)
-                logger.info(f'实体: {entity.name} 属性: {attr} 值: {entity.attributes[attr]}')
+                logger.info(
+                    f'实体: {entity.name} 属性: {attr} 值: {entity.attributes[attr]}'
+                )
 
     def get_cyphers(self) -> list[str]:
         """ 将整体的关联关系存入图数据库中
@@ -251,19 +234,21 @@ class Document:
             list[str]: 多条 cypher 语句
         """
 
-        cyphers = [f'CREATE (:Document {{id: "{self.id}", name: "{self.name}"}})']
+        cyphers = [
+            f'CREATE (:Document {{id: "{self.id}", name: "{self.name}"}})'
+        ]
         # 创建所有知识点实体和实体属性
         for entity in self.knowledgepoints:
-            attrs = str(entity.attributes).replace("'", '"')[1:-1]  # 去掉字典两端的括号, 单引号转换为双引号
             cyphers.append(
-                f'CREATE (:KnowledgePoint {{id: "{entity.id}", name: "{entity.name}", {attrs} }})'
+                f'CREATE (:KnowledgePoint {{id: "{entity.id}", name: "{entity.name}", define: "{entity.attributes.get("定义", "")}" }})'
             )
         # 创建所有知识点关联
         for entity in self.knowledgepoints:
             for relation in entity.relations:
-                cyphers.append(
-                    f'MATCH (n1:KnowledgePoint {{id: "{entity.id}") MATCH (n2:KnowledgePoint {{id: "{relation.tail.id}") CREATE (n1)-[:{relation.type} {relation.attributes}]->(n2)'
-                )
+                if relation.type in ['包含', '相关', '顺序']:
+                    cyphers.append(
+                        f'MATCH (n1:KnowledgePoint {{id: "{entity.id}"}}) MATCH (n2:KnowledgePoint {{id: "{relation.tail.id}"}}) CREATE (n1)-[:{relation.type} {relation.attributes}]->(n2)'
+                    )
 
         def bookmarks_to_cypher(bookmarks: list[BookMark], parent_id: str):
             cyphers: list[str] = []

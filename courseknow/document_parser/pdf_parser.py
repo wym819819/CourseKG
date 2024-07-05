@@ -1,5 +1,5 @@
 from .base import *
-from .parser import Parser, Page
+from .parser import Parser, Page, Content, ContentType
 
 import fitz
 from paddleocr import PPStructure
@@ -70,7 +70,7 @@ def _replace_linefeed(sentence: str, ignore_end=True, replace='') -> str:
 class PDFParser(Parser):
 
     def __init__(self, pdf_path: str) -> None:
-        """ 解析pdf文档
+        """ 解析pdf文档, 需要带有书签以判断层级
 
         Args:
             pdf_path (str): pdf文档路径
@@ -94,32 +94,70 @@ class PDFParser(Parser):
             list[BookMark]: 书签列表
         """
         stack: list[BookMark] = []
+        bookmarks: list[BookMark] = []
         result = self.__pdf.get_toc()
         for item in result:
             level, title, page = item
             page -= 1  # 从0开始
             level -= 1  # 从0开始
-            bookmark = BookMark(
+            bookmarks.append(BookMark(
                 id='1:' + str(uuid.uuid4()) + f':{level}',
                 title=title,
                 page_index=page,
                 page_end=0,  # 结束页码需要由下一个书签确定
                 level=level,
-                subs=None)
-            # 由于没有根节点所有需要先将第一个放进去
-            if len(stack) == 0:
-                stack.append(bookmark)
-                continue
-            subs = []
-            while len(stack) > 0 and stack[-1].level > level:
-                subs.append(stack.pop())
-            subs.reverse()
-            stack[-1].subs = None if len(
-                subs) == 0 else subs  # 暂时不设置KnowledgePoint, 置为None
-            if len(stack) != 0:
-                stack[-1].set_page_end(page)
+                subs=[]))
+
+        for bookmark in reversed(bookmarks):
+            level = bookmark.level
+
+            while stack and stack[-1].level > level:
+                bookmark.subs.append(stack.pop())
+
             stack.append(bookmark)
+
+        stack.reverse()
         return stack
+
+    def get_content(self, bookmark: BookMark) -> list[Content]:
+        """  获取书签下的所有内容
+
+        Args:
+            bookmark (BookMark): 书签
+
+        Returns:
+            list[Content]: 内容列表
+        """
+        # 获取书签对应的页面内容
+        contents: list[Content] = []
+        # 后续这个地方可以并行执行
+        for pg in range(bookmark.page_index,
+                        bookmark.page_end + 1):
+
+            # 起始页内容定位
+            page_contents = self.get_page(pg).contents
+            if pg == bookmark.page_index:
+                idx = 0
+                for i, content in enumerate(page_contents):
+                    blank_pattern = re.compile(
+                        r'\s+')  # 可能会包含一些空白字符这里去掉
+                    if content.type == ContentType.Title and re.sub(
+                            blank_pattern, '',
+                            content.content) == re.sub(
+                            blank_pattern, '', bookmark.title):
+                        idx = i + 1
+                        break
+                page_contents = page_contents[idx:]
+            # 终止页内容定位
+            if pg == bookmark.page_end:
+                idx = len(page_contents)
+                for i, content in enumerate(page_contents):
+                    if content.type == ContentType.Title:  # 直到遇到下一个标题为止，这里的逻辑可能存在问题~
+                        idx = i
+                        break
+                page_contents = page_contents[:idx]
+            contents.extend(page_contents)
+        return contents
 
     def get_page(self, page_index: int, structure=True) -> Page:
         """ 获取文档页面, 可以使用版面分析获得更好的内容结构

@@ -91,17 +91,26 @@ class QwenAPI(LLM):
 
 class VLLM(LLM):
 
-    def __init__(self, path: str) -> None:
+    def __init__(self,
+                 path: str,
+                 stop_token_ids: list[int] = None) -> None:
         """ 使用VLLM加载模型
 
         Args:
             path (str): 模型名称或路径
+            stop_token_ids (list[int], optional): 停止词表. Defaults to None.
         """
         super().__init__()
         self.path = path
         self.llm = vllm.LLM(model=path,
-                            tensor_parallel_size=tensor_parallel_size)
-        self.tokenizer = AutoTokenizer.from_pretrained(path)
+                            tensor_parallel_size=tensor_parallel_size,
+                            max_model_len=max_model_len,
+                            gpu_memory_utilization=1,
+                            enforce_eager=True,
+                            trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(path,
+                                                       trust_remote_code=True)
+        self.stop_token_ids = stop_token_ids
 
     def chat(self, message: str) -> str:
         """ 模型的单轮对话
@@ -112,16 +121,15 @@ class VLLM(LLM):
         Returns:
             str: 模型输出
         """
-        sampling_params = SamplingParams(temperature=temperature,
-                                         top_p=top_p,
-                                         top_k=top_k,
-                                         repetition_penalty=repetition_penalty,
-                                         max_tokens=max_tokens,
-                                         presence_penalty=presence_penalty)
-        messages = [{
-            "role": "user",
-            "content": message
-        }]
+        sampling_params = SamplingParams(
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            max_tokens=max_tokens,
+            presence_penalty=presence_penalty,
+            stop_token_ids=self.stop_token_ids)
+        messages = [{"role": "user", "content": message}]
         text = self.tokenizer.apply_chat_template(messages,
                                                   tokenize=False,
                                                   add_generation_prompt=True)

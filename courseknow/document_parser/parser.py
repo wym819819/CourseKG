@@ -63,6 +63,18 @@ class Parser(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_content(self, bookmark: BookMark) -> list[Content]:
+        """  获取书签下的所有内容
+
+        Args:
+            bookmark (BookMark): 书签
+
+        Returns:
+            list[Content]: 内容列表
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def get_page(self, page_index: int) -> Page:
         """ 获取文档页面
 
