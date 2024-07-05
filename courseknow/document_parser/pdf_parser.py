@@ -1,13 +1,11 @@
 from .base import *
 from .parser import Parser, Page, Content, ContentType
-
 import fitz
 from paddleocr import PPStructure
 from PIL import Image
 import numpy as np
 import cv2
 import re
-import uuid
 import os
 
 
@@ -214,14 +212,3 @@ class PDFParser(Parser):
         for pg in range(0, self.__pdf.page_count):
             pages.append(self.get_page(page_index=pg, structure=structure))
         return pages
-
-    def get_document(self) -> Document:
-        """ 获取文档
-
-        Returns:
-            Document: 文档
-        """
-        return Document(id='0:' + str(uuid.uuid4()),
-                        name=os.path.basename(self.file_path).split('.')[0],
-                        bookmarks=self.get_bookmarks(),
-                        parser=self)  # 与解析器进行关联

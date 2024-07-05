@@ -4,8 +4,10 @@ import uuid
 from loguru import logger
 from .config import ignore_page, parser_log
 from collections import Counter
-from .parser import Parser
+from typing import TYPE_CHECKING
 import random
+if TYPE_CHECKING:
+    from .parser import Parser
 
 logger.remove(0)
 logger.add(parser_log,
@@ -59,7 +61,7 @@ class Document:
     id: str
     name: str
     bookmarks: list[BookMark]
-    parser: Parser
+    parser: 'Parser'
     knowledgepoints: list[KPEntity] = field(default_factory=list)
 
     def set_knowledgepoints_by_llm(self,
@@ -135,7 +137,7 @@ class Document:
                     resp = llm.chat(prompt.get_ner_prompt(content))
                     logger.info(f'第{idx}次采样: ' + resp)
                     entities_name = prompt.post_process(resp)
-                    if isinstance(entities_name, dict):
+                    if isinstance(entities_name, dict):  # 解析失败或者没有产生结果
                         continue
                     logger.info(f'获取知识点实体: ' + str(entities_name))
                     all_entities_name.extend(entities_name)
@@ -215,16 +217,15 @@ class Document:
                 if len(value_list) == 1:
                     entity.attributes[attr] = value_list[0]
                 else:
-                    resp = prompt.get_best_attr(entity.name, attr,
-                                                value_list)
+                    resp = prompt.get_best_attr(entity.name, attr, value_list)
                     try:
-                        idx = int(resp)
+                        idx = int(resp.strip())  # 防止前后空格
                         entity.attributes[attr] = value_list[idx]
                     except ValueError:  # 解析失败，模型回答非纯数字，则随机选择
                         logger.error(resp)
                         entity.attributes[attr] = random.choice(value_list)
                 logger.info(
-                    f'实体: {entity.name} 属性: {attr} 值: {entity.attributes[attr]}'
+                    f'实体: {entity.name}, 属性: {attr}, 值: {entity.attributes[attr]}'
                 )
 
     def get_cyphers(self) -> list[str]:

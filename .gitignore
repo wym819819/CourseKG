@@ -46,6 +46,6 @@ cache
 log
 pretrain
 model
-assets
 
 *.ps1
+.ipynb_checkpoints
