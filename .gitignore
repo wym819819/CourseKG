@@ -49,4 +49,5 @@ model
 
 *.ps1
 .ipynb_checkpoints
-cypher
+output
+assets
