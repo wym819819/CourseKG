@@ -3,13 +3,13 @@ import sys
 
 sys.path.append(os.getcwd())
 
-from courseknow.document_parser import DOCXParser
-from courseknow.database import Neo4j
-from courseknow.llm import CoTPrompt, VLLM
+from coursekg.document_parser import DOCXParser
+from coursekg.database import Neo4j
+from coursekg.llm import CoTPrompt, QwenAPI
 
-model = VLLM('model/Qwen/Qwen2-7B-Instruct', stop_token_ids=[151329, 151336, 151338])
+model = QwenAPI(url='http://10.4.0.141:1120/chat')
 neo = Neo4j('http://10.4.3.67:7474', 'neo4j', 'neo4j')
-files = []
+files = ['assets/探索数据的奥秘.docx']
 
 for file in files:
     with DOCXParser(file) as parser:

@@ -6,7 +6,6 @@ from PIL import Image
 import numpy as np
 import cv2
 import re
-import os
 
 
 def _structure_result_sort(result: list[dict], epsilon: int = 5) -> list[dict]:
@@ -98,13 +97,14 @@ class PDFParser(Parser):
             level, title, page = item
             page -= 1  # 从0开始
             level -= 1  # 从0开始
-            bookmarks.append(BookMark(
-                id='1:' + str(uuid.uuid4()) + f':{level}',
-                title=title,
-                page_index=page,
-                page_end=0,  # 结束页码需要由下一个书签确定
-                level=level,
-                subs=[]))
+            bookmarks.append(
+                BookMark(
+                    id='1:' + str(uuid.uuid4()) + f':{level}',
+                    title=title,
+                    page_index=page,
+                    page_end=0,  # 结束页码需要由下一个书签确定
+                    level=level,
+                    subs=[]))
 
         for bookmark in reversed(bookmarks):
             level = bookmark.level
@@ -115,6 +115,17 @@ class PDFParser(Parser):
             stack.append(bookmark)
 
         stack.reverse()
+
+        # 设置各个书签的结束页码
+        def set_page_end(bookmarks: list[BookMark]):
+            for idx in range(len(bookmarks)):
+                if idx != len(bookmarks) - 1:
+                    bookmarks[idx].set_page_end(bookmarks[idx + 1].page_index)
+                set_page_end(bookmarks[idx].subs)
+
+        set_page_end(stack)
+        stack[-1].set_page_end(self.__pdf.page_count - 1)
+
         return stack
 
     def get_content(self, bookmark: BookMark) -> list[Content]:
@@ -129,20 +140,17 @@ class PDFParser(Parser):
         # 获取书签对应的页面内容
         contents: list[Content] = []
         # 后续这个地方可以并行执行
-        for pg in range(bookmark.page_index,
-                        bookmark.page_end + 1):
+        for pg in range(bookmark.page_index, bookmark.page_end + 1):
 
             # 起始页内容定位
             page_contents = self.get_page(pg).contents
             if pg == bookmark.page_index:
                 idx = 0
                 for i, content in enumerate(page_contents):
-                    blank_pattern = re.compile(
-                        r'\s+')  # 可能会包含一些空白字符这里去掉
+                    blank_pattern = re.compile(r'\s+')  # 可能会包含一些空白字符这里去掉
                     if content.type == ContentType.Title and re.sub(
-                            blank_pattern, '',
-                            content.content) == re.sub(
-                            blank_pattern, '', bookmark.title):
+                            blank_pattern, '', content.content) == re.sub(
+                                blank_pattern, '', bookmark.title):
                         idx = i + 1
                         break
                 page_contents = page_contents[idx:]

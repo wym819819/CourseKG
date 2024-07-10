@@ -91,9 +91,7 @@ class QwenAPI(LLM):
 
 class VLLM(LLM):
 
-    def __init__(self,
-                 path: str,
-                 stop_token_ids: list[int] = None) -> None:
+    def __init__(self, path: str, stop_token_ids: list[int] = None) -> None:
         """ 使用VLLM加载模型
 
         Args:
@@ -121,14 +119,13 @@ class VLLM(LLM):
         Returns:
             str: 模型输出
         """
-        sampling_params = SamplingParams(
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
-            repetition_penalty=repetition_penalty,
-            max_tokens=max_tokens,
-            presence_penalty=presence_penalty,
-            stop_token_ids=self.stop_token_ids)
+        sampling_params = SamplingParams(temperature=temperature,
+                                         top_p=top_p,
+                                         top_k=top_k,
+                                         repetition_penalty=repetition_penalty,
+                                         max_tokens=max_tokens,
+                                         presence_penalty=presence_penalty,
+                                         stop_token_ids=self.stop_token_ids)
         messages = [{"role": "user", "content": message}]
         text = self.tokenizer.apply_chat_template(messages,
                                                   tokenize=False,

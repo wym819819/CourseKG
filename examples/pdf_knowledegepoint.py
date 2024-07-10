@@ -1,7 +1,11 @@
-from courseknow.document_parser import PDFParser
-from courseknow.database import Neo4j
-from courseknow.llm import CoTPrompt, VLLM
+import os
+import sys
 
+sys.path.append(os.getcwd())
+
+from coursekg.document_parser import PDFParser
+from coursekg.database import Neo4j
+from coursekg.llm import CoTPrompt, VLLM
 
 model = VLLM('model/Qwen/Qwen2-7B-Instruct')
 neo = Neo4j('http://10.4.3.67:7474', 'neo4j', 'neo4j')

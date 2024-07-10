@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 logger.remove(0)
 logger.add(parser_log,
            format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
-           mode="w")
+           mode="a")
 
 
 @dataclass
@@ -178,7 +178,6 @@ class Document:
                             else:
                                 entity.attributes[attr_name].append(value)
             # 关系抽取
-            # 关系抽取有强烈的NULL倾向 关系也可以做SC
             if len(entities_name) <= 1:
                 pass
             else:
@@ -227,6 +226,8 @@ class Document:
                 logger.info(
                     f'实体: {entity.name}, 属性: {attr}, 值: {entity.attributes[attr]}'
                 )
+
+        # 实体归一化
 
     def get_cyphers(self) -> list[str]:
         """ 将整体的关联关系存入图数据库中
