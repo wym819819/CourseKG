@@ -44,10 +44,8 @@ package-lock.json
 test
 cache
 log
-pretrain
 model
 
 *.ps1
 .ipynb_checkpoints
-output
 assets

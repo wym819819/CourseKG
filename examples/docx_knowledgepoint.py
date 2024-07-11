@@ -1,13 +1,8 @@
-import os
-import sys
-
-sys.path.append(os.getcwd())
-
 from coursekg.document_parser import DOCXParser
 from coursekg.database import Neo4j
-from coursekg.llm import CoTPrompt, QwenAPI
+from coursekg.llm import CoTPrompt, VLLM
 
-model = QwenAPI(url='http://10.4.0.141:1120/chat')
+model = VLLM(path='model/Qwen/Qwen2-7B-Instruct')
 neo = Neo4j('http://10.4.3.67:7474', 'neo4j', 'neo4j')
 files = ['assets/探索数据的奥秘.docx']
 

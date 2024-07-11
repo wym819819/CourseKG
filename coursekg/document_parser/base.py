@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+# Create Date: 2024/07/11
+# Author: wangtao <wangtao.cpu@gmail.com>
+# File Name: coursekg/database/__init__.py
+# Description: 定义文档、书签以及抽取知识图谱相关类和方法
+
 from dataclasses import dataclass, field
 from ..llm import LLM, Prompt
 import uuid
@@ -6,6 +12,8 @@ from .config import ignore_page, parser_log
 from collections import Counter
 from typing import TYPE_CHECKING
 import random
+import pickle
+
 if TYPE_CHECKING:
     from .parser import Parser
 
@@ -63,6 +71,38 @@ class Document:
     bookmarks: list[BookMark]
     parser: 'Parser'
     knowledgepoints: list[KPEntity] = field(default_factory=list)
+
+    def dump(self, path: str) -> None:
+        """ 序列化 Document 对象，不包含parser属性
+
+        Args:
+            path: 保存路径
+        """
+        with open(path, 'wb') as f:
+            pickle.dump(self, f)
+
+    def __getstate__(self):
+        """ 自定义序列化方法
+        """
+        state = self.__dict__.copy()
+        # 移除 parser 属性
+        del state['parser']
+        return state
+
+    def __setstate__(self, state):
+        """ 自定义反序列化方法
+        """
+        self.__dict__.update(state)
+
+    @staticmethod
+    def load(path: str) -> 'Document':
+        """ 反序列化 Document 对象，不包含parser属性
+
+        Args:
+            path: 文件路径
+        """
+        with open(path, 'rb') as f:
+            return pickle.load(f)
 
     def set_knowledgepoints_by_llm(self,
                                    llm: LLM,
@@ -227,7 +267,7 @@ class Document:
                     f'实体: {entity.name}, 属性: {attr}, 值: {entity.attributes[attr]}'
                 )
 
-        # 实体归一化
+        # 实体共指消解
 
     def get_cyphers(self) -> list[str]:
         """ 将整体的关联关系存入图数据库中

@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+# Date: 2024/07/11
+# Author: wangtao <wangtao.cpu@gmail.com>
+# File: coursekg/database/neo4j.py
+# Description: 定义图数据库连接类
+
 from py2neo import Graph
 from tqdm import tqdm
 

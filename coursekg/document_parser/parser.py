@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+# Create Date: 2024/07/11
+# Author: wangtao <wangtao.cpu@gmail.com>
+# File Name: coursekg/database/__init__.py
+# Description: 定义文档解析器基类
+
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum

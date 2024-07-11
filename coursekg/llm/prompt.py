@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+# Create Date: 2024/07/11
+# Author: wangtao <wangtao.cpu@gmail.com>
+# File Name: coursekg/database/__init__.py
+# Description: 定义提示词类
+
 from abc import ABC, abstractmethod
 import json
 import re

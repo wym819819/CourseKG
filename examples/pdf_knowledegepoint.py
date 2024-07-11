@@ -1,8 +1,3 @@
-import os
-import sys
-
-sys.path.append(os.getcwd())
-
 from coursekg.document_parser import PDFParser
 from coursekg.database import Neo4j
 from coursekg.llm import CoTPrompt, VLLM
