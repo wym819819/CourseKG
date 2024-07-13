@@ -5,20 +5,30 @@
 # Description: 定义 mongodb 数据库连接类
 
 from pymongo import MongoClient
+from pymongo.collection import Collection
 from .singleton import singleton
 
 
 @singleton
 class Mongo:
 
-    def __init__(self, url: str, db: str, collection: str) -> None:
+    def __init__(self, url: str, db: str):
         """ 连接到 Mongodb 数据库
 
         Args:
             url (str): 地址
             db (str): 数据库
-            collection (str): 集合
         """
         self.__client = MongoClient(url)
         self.__db = self.__client[db]
-        self.collection = self.__db[collection]
+
+    def get_collection(self, collection: str) -> Collection:
+        """ 获取数据库集合
+
+        Args:
+            collection (str): 集合名称
+
+        Returns:
+            Collection: 集合
+        """
+        return self.__db[collection]

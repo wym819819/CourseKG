@@ -49,3 +49,4 @@ model
 *.ps1
 .ipynb_checkpoints
 assets
+coursekg/database/faiss_index/*

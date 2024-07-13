@@ -4,5 +4,6 @@
 # File Name: coursekg/llm/__init__.py
 # Description: 大模型接口
 
-from .prompt import Prompt, CoTPrompt
+from .prompt import Prompt, ExamplePrompt
 from .llm import LLM, VLLM, QwenAPI
+from .prompt_strategy import ExamplePromptStrategy
