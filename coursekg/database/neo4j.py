@@ -6,18 +6,7 @@
 
 from py2neo import Graph
 from tqdm import tqdm
-
-
-def singleton(cls):
-
-    instances = {}
-
-    def _singleton(*args, **kwargs):
-        if cls not in instances:
-            instances[cls] = cls(*args, **kwargs)
-        return instances[cls]
-
-    return _singleton
+from .singleton import singleton
 
 
 @singleton

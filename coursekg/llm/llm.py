@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Create Date: 2024/07/11
 # Author: wangtao <wangtao.cpu@gmail.com>
-# File Name: coursekg/database/__init__.py
+# File Name: coursekg/llm/llm.py
 # Description: 定义大模型类
 
 import os

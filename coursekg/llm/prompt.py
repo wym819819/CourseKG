@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
 # Create Date: 2024/07/11
 # Author: wangtao <wangtao.cpu@gmail.com>
-# File Name: coursekg/database/__init__.py
+# File Name: coursekg/llm/prompt.py
 # Description: 定义提示词类
 
 from abc import ABC, abstractmethod
 import json
 import re
 from loguru import logger
+from sentence_transformers import SentenceTransformer
+from glob import glob
+import json
+from ..database import Mongo, Faiss
+import numpy as np
 
 entities = {"知识点": "知识点实体类型表示特定领域或学科中的知识单元"}
 relations = {
@@ -107,10 +112,53 @@ class Prompt(ABC):
 
 class CoTPrompt(Prompt):
 
-    def __init__(self) -> None:
+    def __init__(
+            self,
+            embed_model_path: str,
+            mongo_url: str = 'mongodb://localhost:27017/',
+            faiss_path: str = 'coursekg/database/faiss_index.bin') -> None:
         """ 获取提取提示词, 使用多种提示词优化, 包括CoT、基于动态检索的ICL
+
+        Args:
+            embed_model_path (str): 嵌入模型路径
+            mongo_url (str, optional): mongodb 文档数据库地址. Defaults to 'mongodb://localhost:27017/'.
+            faiss_path (str, optional): faiss 向量数据库文件地址. Defaults to 'coursekg/database/faiss_index.bin'.
         """
         super().__init__()
+        self.momgo = Mongo(mongo_url, 'coursekg', 'prompt_example')
+        self.faiss = Faiss(faiss_path)
+        self.embed_model = SentenceTransformer(embed_model_path)
+
+    def reimport_example(
+            self,
+            embed_dim: int,
+            example_dataset_path: str = 'dataset/prompt_example') -> None:
+        """ 重新向数据库(文档数据库/向量数据库)中导入提示词示例
+
+        Args:
+            embed_dim (int): 嵌入维度
+            example_dataset_path (str, optional): 提示词示例源数据地址. Defaults to 'dataset/prompt_example'.
+        """
+        # 清除文档数据库中已保存内容
+        self.momgo.collection.drop()
+        examples = []
+        idx = 0
+        for file in glob(example_dataset_path + '/*'):
+            with open(file, 'r', encoding='UTF-8') as f:
+                for line in json.load(f):
+                    line['index'] = idx
+                    idx += 1
+                    examples.append(line)
+        self.momgo.collection.insert_many(examples)
+        data = []
+        for line in examples:
+            data.append(
+                self.embed_model.encode(line['input'],
+                                        normalize_embeddings=True))
+        # 清除向量数据库索引
+        self.faiss.delete()
+        self.faiss.create(embed_dim).add(
+            np.array(data).astype('float32')).save()
 
     def get_ner_prompt(self, content: str) -> str:
         """ 获取实体抽取提示词
@@ -121,34 +169,21 @@ class CoTPrompt(Prompt):
         Returns:
             str: 组合后的提示词
         """
+        if self.faiss.index is None:
+            self.faiss.load()
+        content_vec = self.embed_model.encode(content,
+                                              normalize_embeddings=True)
+        idx = self.faiss.search(np.array([content_vec]).astype('float32'), 3)
+        examples = []
+        for i in idx:
+            res = self.momgo.collection.find_one({'index': i})
+            examples.append({'input': res['input'], 'output': res['output']})
         prompt = {
             "instruction":
             "你是专门进行实体抽取的专家。请对input的内容进行总结根据总结从中抽取出符合schema类型的实体。最后请给出你的总结和抽取到的实体列表，返回的格式为 ```json\n[\"entity1\", \"entity2\"]\n```",
-            "schema":
-            entities,
-            "examples": [{
-                "input":
-                """如果有人问你现在有多幸福，你会如何回答呢？一般的人可能会给出诸如“还可以吧”或者“不是那么幸福”等笼统的回答。如果有人回答“我现在的幸福指数是10.23”的话，可能会把人吓一跳吧。因为他用一个数值指标来评判自己的幸福程度。这里的幸福指数只是打个比方，实际上神经网络的学习也在做同样的事情。
-                       神经网络的学习通过某个指标表示现在的状态。然后，以这个指标为基准，寻找最优权重参数。和刚刚那位以幸福指数为指引寻找“最优人生”的人一样，神经网络以某个指标为线索寻找最优权重参数。神经网络的学习中所用的指标称为损失函数（loss function）。这个损失函数可以使用任意函数，但一般用均方误差和交叉熵误差等。
-                       损失函数是表示神经网络性能的“恶劣程度”的指标，即当前的神经网络对监督数据在多大程度上不拟合，在多大程度上不一致。以“性能的恶劣程度”为指标可能会使人感到不太自然，但是如果给损失函数乘上一个负值，就可以解释为“在多大程度上不坏”，即“性能有多好”。并且，“使性能的恶劣程度达到最小”和“使性能的优良程度达到最大”是等价的，不管是用“恶劣程度”还是“优良程度”，做的事情本质上都是一样的。""",
-                "output":
-                "这段文字介绍了我们一般通过损失函数来评价神经网络的性能，可以了解到损失函数这一概念，所以抽取出来的知识点实体为 ```json\n[\"损失函数\"]\n```"
-            }, {
-                "input":
-                """神经网络的学习的目的是找到使损失函数的值尽可能小的参数。这是寻找最优参数的问题，解决这个问题的过程称为最优化（optimization）。遗憾的是，神经网络的最优化问题非常难。这是因为参数空间非常复杂，无法轻易找到最优解（无法使用那种通过解数学式一下子就求得最小值的方法）。
-                       而且，在深度神经网络中，参数的数量非常庞大，导致最优化问题更加复杂。在前几章中，为了找到最优参数，我们将参数的梯度（导数）作为了线索。使用参数的梯度，沿梯度方向更新参数，并重复这个步骤多次，从而逐渐靠近最优参数，这个过程称为随机梯度下降法（stochastic gradient descent），
-                       简称SGD。SGD是一个简单的方法，不过比起胡乱地搜索参数空间，也算是“聪明”的方法。但是，根据不同的问题，也存在比SGD更加聪明的方法。本节我们将指出SGD的缺点，并介绍SGD以外的其他最优化方法。""",
-                "output":
-                "这段文字介绍了神经网络的学习就是参数最优化的过程，并且通常使用随机梯度下降法来寻找最优参数，所以抽取出来的知识点实体为 ```json\n[\"最优化\", \"随机梯度下降法\"]\n```"
-            }, {
-                "input":
-                """顺便提一下，在图3-2的网络中，偏置b并没有被画出来。如果要明确地表示出b，可以像图3-3那样做。图3-3中添加了权重为b的输入信号1。这个感知机将x1、x2、1三个信号作为神经元的输入，将其和各自的权重相乘后，传送至下一个神经元。在下一个神经元中，计算这些加权信号的总和。
-                       如果这个总和超过0，则输出1，否则输出0。另外，由于偏置的输入信号一直是1，所以为了区别于其他神经元，我们在图中把这个神经元整个涂成灰色。""",
-                "output":
-                "这段文字可能在描述一张有关神经元的图像，但是没有介绍一个新的概念或者引入新的名词，所以没有能够抽取出来的知识点，返回为 ```json\n[]\n```"
-            }],
-            'input':
-            content
+            "schema": entities,
+            "examples": examples,
+            'input': content
         }
         return json.dumps(prompt, indent=4, ensure_ascii=False)
 

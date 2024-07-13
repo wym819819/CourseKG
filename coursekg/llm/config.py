@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Create Date: 2024/07/11
 # Author: wangtao <wangtao.cpu@gmail.com>
-# File Name: coursekg/database/__init__.py
+# File Name: coursekg/llm/config.py
 # Description: 定义大模型配置
 
 temperature = 0.6  # 取值越大softmax函数概率分布越平缓

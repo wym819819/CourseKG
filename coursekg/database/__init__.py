@@ -5,3 +5,5 @@
 # Description: 数据库接口
 
 from .neo4j import Neo4j
+from .mongo import Mongo
+from .vector import Faiss

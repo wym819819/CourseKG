@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Create Date: 2024/07/11
 # Author: wangtao <wangtao.cpu@gmail.com>
-# File Name: coursekg/database/__init__.py
+# File Name: coursekg/document_parser/pdf_parser.py
 # Description: 定义pdf文档解析器
 
 from .base import *
@@ -154,9 +154,11 @@ class PDFParser(Parser):
                 idx = 0
                 for i, content in enumerate(page_contents):
                     blank_pattern = re.compile(r'\s+')  # 可能会包含一些空白字符这里去掉
-                    if content.type == ContentType.Title and re.sub(
-                            blank_pattern, '', content.content) == re.sub(
-                                blank_pattern, '', bookmark.title):
+                    content_new = re.sub(blank_pattern, '', content.content)
+                    title_new = re.sub(blank_pattern, '', bookmark.title)
+                    if content.type == ContentType.Title and (
+                            content_new == title_new
+                            or content_new in title_new):
                         idx = i + 1
                         break
                 page_contents = page_contents[idx:]
