@@ -110,7 +110,8 @@ class PDFParser(Parser):
                     page_index=page,
                     page_end=0,  # 结束页码需要由下一个书签确定
                     level=level,
-                    subs=[]))
+                    subs=[],
+                    resource=[]))
 
         for bookmark in reversed(bookmarks):
             level = bookmark.level

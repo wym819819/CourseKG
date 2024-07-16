@@ -44,6 +44,7 @@ class Parser(ABC):
         Args:
             file_path (str): 文档路径
         """
+        super().__init__()
         self.file_path = file_path
 
     def __enter__(self) -> 'Parser':

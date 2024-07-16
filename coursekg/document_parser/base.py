@@ -16,6 +16,7 @@ import pickle
 
 if TYPE_CHECKING:
     from .parser import Parser
+    from .resource import ResourceMap, Resource
 
 logger.remove(0)
 logger.add(parser_log,
@@ -50,6 +51,7 @@ class BookMark:
     page_end: int
     level: int
     subs: list['BookMark'] | list[KPEntity]
+    resource: list['Resource']
 
     def set_page_end(self, page_end: int) -> None:
         """ 设置书签的结束页, 和直接修改 BookMark 对象的 page_end 属性不同, 该方法会考虑到书签嵌套的情况
@@ -60,6 +62,24 @@ class BookMark:
         self.page_end = page_end
         if self.subs and isinstance(self.subs[-1], BookMark):
             self.subs[-1].set_page_end(page_end)
+
+    def get_kps(self) -> list[KPEntity]:
+        """ 获取当前书签下的所有 知识点实体
+
+        Returns:
+            list[KPEntity]: 实体列表
+        """
+        kps: list[KPEntity] = []
+
+        def get_kp(bookmarks: list[BookMark]):
+            for bk in bookmarks:
+                if bk.subs and isinstance(bk.subs[-1], KPEntity):
+                    kps.extend(bk.subs)
+                else:
+                    get_kp(bk.subs)
+
+        get_kp([self])
+        return kps
 
 
 @dataclass
@@ -104,6 +124,23 @@ class Document:
         with open(path, 'rb') as f:
             return pickle.load(f)
 
+    def flatten_bookmarks(self) -> list[BookMark]:
+        """ 将bookmark的树状结构扁平化，以便快速查找
+
+        Returns:
+            list[BookMark]: 书签列表
+        """
+        res: list[BookMark] = []
+
+        def get_bookmark(bookmarks: list[BookMark]):
+            for bookmark in bookmarks:
+                res.append(bookmark)
+                if bookmark.subs and isinstance(bookmark.subs[-1], BookMark):
+                    get_bookmark(bookmark.subs)
+
+        get_bookmark(self.bookmarks)
+        return res
+
     def set_knowledgepoints_by_llm(self,
                                    llm: LLM,
                                    prompt: Prompt,
@@ -119,29 +156,6 @@ class Document:
             samples (int, optional): 采样自我一致性策略的采样次数. Defaults to 5.
             top (float, optional): 采样自我一致性策略时，出现次数超过 top * samples 时才会被采纳，范围为 [0, 1]. Defaults to 0.5.
         """
-
-        def set_knowledgepoints(bookmarks: list[BookMark]) -> None:
-            for bookmark in bookmarks:
-                if bookmark.title in ignore_page:
-                    continue
-                if bookmark.subs and isinstance(bookmark.subs[-1], BookMark):
-                    set_knowledgepoints(bookmark.subs)
-                else:
-                    logger.success('子章节: ' + bookmark.title)
-                    contents = self.parser.get_content(bookmark)
-                    text_contents = '\n'.join(
-                        [content.content for content in contents])
-                    # 防止生成全空白
-                    text_contents = text_contents.strip()
-                    if len(text_contents) == 0:
-                        bookmark.subs = []
-                        continue
-                    entities: list[KPEntity] = get_knowledgepoints(
-                        text_contents,
-                        self_consistency=self_consistency,
-                        samples=samples,
-                        top=top)
-                    bookmark.subs = entities
 
         def get_knowledgepoints(content: str,
                                 self_consistency=False,
@@ -248,7 +262,23 @@ class Document:
 
             return entities
 
-        set_knowledgepoints(self.bookmarks)
+        for bookmark in self.flatten_bookmarks():
+            if not bookmark.subs:  # 表示最后一级书签 subs为空数组需要设置知识点
+                logger.success('子章节: ' + bookmark.title)
+                contents = self.parser.get_content(bookmark)
+                text_contents = '\n'.join(
+                    [content.content for content in contents])
+                # 防止生成全空白
+                text_contents = text_contents.strip()
+                if len(text_contents) == 0:
+                    bookmark.subs = []
+                    continue
+                entities: list[KPEntity] = get_knowledgepoints(
+                    text_contents,
+                    self_consistency=self_consistency,
+                    samples=samples,
+                    top=top)
+                bookmark.subs = entities
 
         # 选择最好的属性值
         for entity in self.knowledgepoints:
@@ -269,8 +299,8 @@ class Document:
 
         # 实体共指消解
 
-    def get_cyphers(self) -> list[str]:
-        """ 将整体的关联关系存入图数据库中
+    def to_cyphers(self) -> list[str]:
+        """ 将整体的关联关系转换为 cypher CREATE 语句
 
         Returns:
             list[str]: 多条 cypher 语句
@@ -298,8 +328,9 @@ class Document:
                 if bookmark.title in ignore_page:
                     continue
                 # 创建章节实体
+                res = [resource.file_path for resource in bookmark.resource]
                 cyphers.append(
-                    f'CREATE (:Chapter {{id: "{bookmark.id}", name: "{bookmark.title}", page_start: {bookmark.page_index}, page_end: {bookmark.page_end}}})'
+                    f'CREATE (:Chapter {{id: "{bookmark.id}", name: "{bookmark.title}", page_start: {bookmark.page_index}, page_end: {bookmark.page_end}, resource: {res}}})'
                 )
                 # 创建章节和上级章节 (书籍) 关联, 所以不写类别
                 cyphers.append(
@@ -318,3 +349,22 @@ class Document:
 
         cyphers.extend(bookmarks_to_cypher(self.bookmarks, self.id))
         return cyphers
+
+    def set_resource(self, resource_map: 'ResourceMap') -> None:
+        """ 为知识点设置相应的资源
+
+        Args:
+            resource_map (ResourceMap): 资源和Bookmark的映射关系
+        """
+        title, resource = resource_map.bookmark_title, resource_map.resource
+        bookmark = None
+        for bk in self.flatten_bookmarks():
+            if bk.title == title:
+                bookmark = bk
+                break
+        if bookmark:
+            bookmark.resource.append(resource)
+            # 为下面的知识点实体设置Resource Slice
+            for kp in bookmark.get_kps():
+                slices = resource.get_slices(kp.name)
+                kp.attributes['resources'] = slices

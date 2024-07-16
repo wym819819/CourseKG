@@ -44,7 +44,8 @@ class DOCXParser(Parser):
                         page_index=0,  # 无需设置起始页码和结束页码
                         page_end=0,
                         level=level,
-                        subs=[]))
+                        subs=[],
+                        resource=[]))
         # 先获取全部的书签再合并
         for bookmark in reversed(bookmarks):
             level = bookmark.level
