@@ -5,22 +5,23 @@
 # Description: 定义提示词示例检索策略
 
 from ..database import Mongo, Faiss
-from pymongo.collation import Collation
+from pymongo.collection import Collection
 import os
 from sentence_transformers import SentenceTransformer
 import json
 import numpy as np
 from glob import glob
+from typing import Literal
 
 
 class Database:
 
-    def __init__(self, faiss: Faiss, mongo: Collation) -> None:
+    def __init__(self, faiss: Faiss, mongo: Collection) -> None:
         """ 数据库组合类
 
         Args:
             faiss (Faiss): faiss 向量数据库
-            mongo (Collation): mongo collection 文档数据库
+            mongo (Collection): mongo collection 文档数据库
         """
         self.faiss = faiss
         self.mongo = mongo
@@ -46,6 +47,9 @@ class ExamplePromptStrategy:
         self.db_re = Database(faiss=Faiss(
             os.path.join(faiss_path, 'faiss_index_re.bin')),
                               mongo=mongo.get_collection('prompt_example_re'))
+        self.db_ae = Database(faiss=Faiss(
+            os.path.join(faiss_path, 'faiss_index_ae.bin')),
+                              mongo=mongo.get_collection('prompt_example_ae'))
         self.embed_model = SentenceTransformer(embed_model_path)
 
     def reimport_example(
@@ -61,9 +65,14 @@ class ExamplePromptStrategy:
 
         for file in glob(example_dataset_path + '/*'):
             if file.endswith('ner.json'):
+                text_name = "input"  # 实体抽取中 模型输入input和文本片段text相同
                 db = self.db_ner
             elif file.endswith('re.json'):
+                text_name = "text"  # 关系/属性抽取中 存入向量库中的应当是文本片段text
                 db = self.db_re
+            elif file.endswith('ae.json'):
+                text_name = "text"
+                db = self.db_ae
             else:
                 continue
             # 清除文档数据库中已保存内容
@@ -79,12 +88,43 @@ class ExamplePromptStrategy:
             data = []
             for line in examples:
                 data.append(
-                    self.embed_model.encode(line['input'],
+                    self.embed_model.encode(line[text_name],
                                             normalize_embeddings=True))
             # 清除向量数据库中已保存内容
             db.faiss.delete()
             db.faiss.create(embed_dim).add(
                 np.array(data).astype('float32')).save()
+
+    def _get_example_by_sts_similarity(
+            self, content: str, type_: Literal["ner", "re", "ae"]) -> list:
+        """ 使用待抽取内容content和库中已有文本片段text的句相似度进行example检索
+
+        Args:
+            content (str): 待抽取的文本内容
+            type_((Literal["ner", "re", "ae"])): 实体/关系/属性 抽取
+
+        Returns:
+            list: 提示词示例列表
+
+        """
+        if type_ == "ner":
+            db = self.db_ner
+        elif type_ == "re":
+            db = self.db_re
+        elif type_ == "ae":
+            db = self.db_ae
+        else:
+            return []
+        if db.faiss.index is None:
+            db.faiss.load()
+        content_vec = self.embed_model.encode(content,
+                                              normalize_embeddings=True)
+        idx = db.faiss.search(np.array([content_vec]).astype('float32'), 3)
+        examples = []
+        for i in idx:
+            res = db.mongo.find_one({'index': i})
+            examples.append({"input": res["input"], 'output': res["output"]})
+        return examples
 
     def get_ner_example(self, content: str) -> list:
         """ 获取实体抽取提示词示例
@@ -95,17 +135,7 @@ class ExamplePromptStrategy:
         Returns:
             list: 提示词示例列表
         """
-        if self.db_ner.faiss.index is None:
-            self.db_ner.faiss.load()
-        content_vec = self.embed_model.encode(content,
-                                              normalize_embeddings=True)
-        idx = self.db_ner.faiss.search(
-            np.array([content_vec]).astype('float32'), 3)
-        examples = []
-        for i in idx:
-            res = self.db_ner.mongo.find_one({'index': i})
-            examples.append({'input': res['input'], 'output': res['output']})
-        return examples
+        return self._get_example_by_sts_similarity(content, "ner")
 
     def get_re_example(self, content: str) -> list:
         """ 获取关系抽取提示词示例
@@ -116,14 +146,15 @@ class ExamplePromptStrategy:
         Returns:
             list: 提示词示例列表
         """
-        if self.db_re.faiss.index is None:
-            self.db_re.faiss.load()
-        content_vec = self.embed_model.encode(content,
-                                              normalize_embeddings=True)
-        idx = self.db_re.faiss.search(
-            np.array([content_vec]).astype('float32'), 3)
-        examples = []
-        for i in idx:
-            res = self.db_re.mongo.find_one({'index': i})
-            examples.append({'input': res['input'], 'output': res['output']})
-        return examples
+        return self._get_example_by_sts_similarity(content, "re")
+
+    def get_ae_example(self, content: str) -> list:
+        """ 获取属性抽取提示词示例
+
+        Args:
+            content (str): 待抽取的文本内容
+
+        Returns:
+            list: 提示词示例列表
+        """
+        return self._get_example_by_sts_similarity(content, "ae")

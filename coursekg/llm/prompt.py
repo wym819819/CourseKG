@@ -147,7 +147,6 @@ class ExamplePrompt(Prompt):
                 {
                     "input":
                     "顺便提一下，在图3-2的网络中，偏置b并没有被画出来。如果要明确地表示出b，可以像图3-3那样做。图3-3中添加了权重为b的输入信号1。这个感知机将x1、x2、1三个信号作为神经元的输入，将其和各自的权重相乘后，传送至下一个神经元。在下一个神经元中，计算这些加权信号的总和。\n如果这个总和超过0，则输出1，否则输出0。另外，由于偏置的输入信号一直是1，所以为了区别于其他神经元，我们在图中把这个神经元整个涂成灰色。",
-                    "entities": [],
                     "output":
                     "这段文字可能在描述一张有关神经元的图像，但是没有介绍一个新的概念或者引入新的名词，所以没有能够抽取出来的知识点。返回为```json\n[]\n```"
                 },
@@ -159,7 +158,7 @@ class ExamplePrompt(Prompt):
             "你是专门进行实体抽取的专家。请对input的内容进行总结根据总结从中抽取出符合schema类型的实体。最后请给出你的总结和抽取到的实体列表，返回的格式为 ```json\n[\"entity1\", \"entity2\"]\n```",
             "schema": entities,
             "examples": examples,
-            'input': content
+            "input": content
         }
         return json.dumps(prompt, indent=4, ensure_ascii=False)
 
@@ -215,19 +214,23 @@ class ExamplePrompt(Prompt):
         Returns:
             str: 组合后的提示词
         """
-        prompt = {
-            "instruction":
-            "你是专门进行属性抽取的专家，请对输入的实体列表根据已有文本片段各自抽取他们的属性值。属性范围只能来源于提供的attributes，属性值无需完全重复原文，可以是你根据原文进行的总结，如果实体没有能够总结的属性值则不返回。返回格式为 ```json\n{\"entity1\": {\"attribute1\":\"value\"}}\n```",
-            "attributes":
-            attributes,
-            "examples": [{
+        if self.strategy is None:
+            examples = [{
                 "input":
                 """实体列表为: ['最优化', '随机梯度下降法'], 文本片段为: 神经网络的学习的目的是找到使损失函数的值尽可能小的参数。这是寻找最优参数的问题，解决这个问题的过程称为最优化（optimization）。遗憾的是，神经网络的最优化问题非常难。这是因为参数空间非常复杂，无法轻易找到最优解（无法使用那种通过解数学式一下子就求得最小值的方法）。
                        而且，在深度神经网络中，参数的数量非常庞大，导致最优化问题更加复杂。在前几章中，为了找到最优参数，我们将参数的梯度（导数）作为了线索。使用参数的梯度，沿梯度方向更新参数，并重复这个步骤多次，从而逐渐靠近最优参数，这个过程称为随机梯度下降法（stochastic gradient descent），
                        简称SGD。SGD是一个简单的方法，不过比起胡乱地搜索参数空间，也算是“聪明”的方法。但是，根据不同的问题，也存在比SGD更加聪明的方法。本节我们将指出SGD的缺点，并介绍SGD以外的其他最优化方法。""",
                 "output":
                 "```json\n{\"最优化\": {\"定义\":\"寻找神经网络最优参数的过程\"}, \"随机梯度下降法\": {\"定义\":\"使用参数的梯度，沿梯度方向更新参数，并重复这个步骤多次，从而逐渐靠近最优参数\"}}\n```"
-            }],
+            }]
+        else:
+            examples = self.strategy.get_ae_example(content)
+        prompt = {
+            "instruction":
+            "你是专门进行属性抽取的专家，请对输入的实体列表根据已有文本片段各自抽取他们的属性值。属性范围只能来源于提供的attributes，属性值无需完全重复原文，可以是你根据原文进行的总结，如果实体没有能够总结的属性值则不返回。返回格式为 ```json\n{\"entity1\": {\"attribute1\":\"value\"}}\n```",
+            "attributes":
+            attributes,
+            "examples": examples,
             "input":
             f"实体列表为: {entities}, 文本片段为: '{content}'"
         }

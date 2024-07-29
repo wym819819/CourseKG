@@ -104,8 +104,8 @@ class PPTX(Resource):
         for idx, slide in enumerate(self.pptx.slides):
             for shape in slide.shapes:
                 if shape.has_text_frame:
-                    if (text := shape.text_frame.text.strip()
-                        ) != '' and keyword in text:
+                    text = shape.text_frame.text.strip()
+                    if keyword in text:
                         idxs.append(idx + 1)  # 页数从1开始计算
                         break
         return _merge_index_slice(idxs, self.file_path)
