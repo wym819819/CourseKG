@@ -228,11 +228,9 @@ class ExamplePrompt(Prompt):
         prompt = {
             "instruction":
             "你是专门进行属性抽取的专家，请对输入的实体列表根据已有文本片段各自抽取他们的属性值。属性范围只能来源于提供的attributes，属性值无需完全重复原文，可以是你根据原文进行的总结，如果实体没有能够总结的属性值则不返回。返回格式为 ```json\n{\"entity1\": {\"attribute1\":\"value\"}}\n```",
-            "attributes":
-            attributes,
+            "attributes": attributes,
             "examples": examples,
-            "input":
-            f"实体列表为: {entities}, 文本片段为: '{content}'"
+            "input": f"实体列表为: {entities}, 文本片段为: '{content}'"
         }
         return json.dumps(prompt, indent=4, ensure_ascii=False)
 
@@ -282,7 +280,7 @@ class ExamplePrompt(Prompt):
                 res = json.loads(fragment)
                 return res
             except json.decoder.JSONDecodeError as e:
-                logger.error(str(e) + ' ' + fragment)
+                logger.error('解析失败, 模型返回内容为: ' + response)
                 return {}
         else:
             return {}

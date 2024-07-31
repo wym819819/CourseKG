@@ -153,8 +153,8 @@ class Document:
             llm (LLM): 指定 LLM
             prompt (Prompt): 使用的提示词类
             self_consistency (bool, optional): 是否采用自我一致性策略 (需要更多的模型推理次数). Defaults to False.
-            samples (int, optional): 采样自我一致性策略的采样次数. Defaults to 5.
-            top (float, optional): 采样自我一致性策略时，出现次数超过 top * samples 时才会被采纳，范围为 [0, 1]. Defaults to 0.5.
+            samples (int, optional): 采用自我一致性策略的采样次数. Defaults to 5.
+            top (float, optional): 采用自我一致性策略时，出现次数超过 top * samples 时才会被采纳，范围为 [0, 1]. Defaults to 0.5.
         """
 
         def get_knowledgepoints(content: str,
@@ -165,7 +165,7 @@ class Document:
 
             Args:
                 content (str): 输入文本
-                self_consistency (bool, optional): 是否采用自我一致性策略 (需要更多的模型推理次数). Defaults to False.
+                self_consistency (bool, optional): 是否采用自我一致性策略. Defaults to False.
                 samples (int, optional): 采用自我一致性策略的采样次数. Defaults to 5.
                 top (float, optional): 采样自我一致性策略时，出现次数超过 top * samples 时才会被采纳. Defaults to 0.5.
 
@@ -211,12 +211,12 @@ class Document:
                     kp = KPEntity(id='2:' + str(uuid.uuid4()), name=name)
                     self.knowledgepoints.append(kp)
                     entities.append(kp)
-            logger.info(f'最终获取知识点实体: ' + str(entities_name))
+            logger.success(f'最终获取知识点实体: ' + str(entities_name))
             # 属性抽取
             attrs = prompt.post_process(
                 llm.chat(prompt.get_ae_prompt(
                     content, entities_name)))  # {'entity': {'attr': ''}}
-            logger.info(f'获取知识点属性: ' + str(attrs))
+            logger.success(f'获取知识点属性: ' + str(attrs))
             if not isinstance(attrs, dict):
                 pass
             else:
@@ -237,7 +237,7 @@ class Document:
             else:
                 relations = prompt.post_process(
                     llm.chat(prompt.get_re_prompt(content, entities_name)))
-                logger.info(f'获取关系三元组: ' + str(relations))
+                logger.success(f'获取关系三元组: ' + str(relations))
                 for rela in relations:  # list[{'head':'', 'relation':'', 'tail':''}]
                     head, tail = None, None
                     for entity in entities:
@@ -264,7 +264,7 @@ class Document:
 
         for bookmark in self.flatten_bookmarks():
             if not bookmark.subs:  # 表示最后一级书签 subs为空数组需要设置知识点
-                logger.success('子章节: ' + bookmark.title)
+                logger.info('子章节: ' + bookmark.title)
                 contents = self.parser.get_content(bookmark)
                 text_contents = '\n'.join(
                     [content.content for content in contents])
@@ -273,6 +273,7 @@ class Document:
                 if len(text_contents) == 0:
                     bookmark.subs = []
                     continue
+                logger.success('子章节内容: ' + text_contents)
                 entities: list[KPEntity] = get_knowledgepoints(
                     text_contents,
                     self_consistency=self_consistency,
@@ -293,7 +294,7 @@ class Document:
                     except ValueError:  # 解析失败，模型回答非纯数字，则随机选择
                         logger.error(resp)
                         entity.attributes[attr] = random.choice(value_list)
-                logger.info(
+                logger.success(
                     f'实体: {entity.name}, 属性: {attr}, 值: {entity.attributes[attr]}'
                 )
 
@@ -354,17 +355,19 @@ class Document:
         """ 为知识点设置相应的资源
 
         Args:
-            resource_map (ResourceMap): 资源和Bookmark的映射关系
+            resource_map (ResourceMap): 资源映射关系
         """
         title, resource = resource_map.bookmark_title, resource_map.resource
-        bookmark = None
+        bookmarks = []
+        titles = title.split("|")
         for bk in self.flatten_bookmarks():
-            if bk.title == title:
-                bookmark = bk
-                break
-        if bookmark:
-            bookmark.resource.append(resource)
-            # 为下面的知识点实体设置Resource Slice
-            for kp in bookmark.get_kps():
-                slices = resource.get_slices(kp.name)
-                kp.attributes['resources'] = slices
+            if bk.title in titles:
+                bookmarks.append(bk)
+        if len(bookmarks) > 0:
+            for bookmark in bookmarks:
+                bookmark.resource.append(resource)
+                # 为下面的知识点实体设置Resource Slice
+                for kp in bookmark.get_kps():
+                    slices = resource.get_slices(kp.name)
+                    if slices:
+                        kp.attributes['resources'] = slices

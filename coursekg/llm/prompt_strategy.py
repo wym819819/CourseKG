@@ -32,13 +32,17 @@ class ExamplePromptStrategy:
     def __init__(self,
                  embed_model_path: str,
                  mongo_url: str = 'mongodb://localhost:27017/',
-                 faiss_path: str = 'coursekg/database/faiss_index') -> None:
+                 faiss_path: str = 'coursekg/database/faiss_index',
+                 topk: int = 3,
+                 avoid_first: bool = False) -> None:
         """ 提示词示例检索策略
 
         Args:
             embed_model_path (str): 嵌入模型路径
             mongo_url (str, optional): 文档数据库 mongodb 地址. Defaults to 'mongodb://localhost:27017/'.
             faiss_path (str, optional): 向量数据库 faiss 存储地址. Defaults to 'coursekg/database/faiss_index'.
+            topk (int, optional): 选择排名前topk个示例. Defaults to 3.
+            avoid_first (bool, optional): 去掉相似度最大的那个示例且不减少最终topk数量. Default to 3.
         """
         mongo = Mongo(mongo_url, 'coursekg')
         self.db_ner = Database(
@@ -51,6 +55,11 @@ class ExamplePromptStrategy:
             os.path.join(faiss_path, 'faiss_index_ae.bin')),
                               mongo=mongo.get_collection('prompt_example_ae'))
         self.embed_model = SentenceTransformer(embed_model_path)
+        self.topk = topk
+        self.avoid_first = avoid_first
+
+        if self.avoid_first:
+            self.topk += 1
 
     def reimport_example(
             self,
@@ -111,20 +120,24 @@ class ExamplePromptStrategy:
             db = self.db_ner
         elif type_ == "re":
             db = self.db_re
-        elif type_ == "ae":
-            db = self.db_ae
         else:
-            return []
+            db = self.db_ae
         if db.faiss.index is None:
             db.faiss.load()
         content_vec = self.embed_model.encode(content,
                                               normalize_embeddings=True)
-        idx = db.faiss.search(np.array([content_vec]).astype('float32'), 3)
+        idx = db.faiss.search(
+            np.array([content_vec]).astype('float32'), self.topk)
         examples = []
         for i in idx:
             res = db.mongo.find_one({'index': i})
             examples.append({"input": res["input"], 'output': res["output"]})
+        if self.avoid_first:
+            examples = examples[1:]
         return examples
+
+    def _get_example_by_entity_similarity():
+        pass
 
     def get_ner_example(self, content: str) -> list:
         """ 获取实体抽取提示词示例
