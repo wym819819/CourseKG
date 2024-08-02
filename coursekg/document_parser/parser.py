@@ -97,5 +97,6 @@ class Parser(ABC):
         """
         return Document(id='0:' + str(uuid.uuid4()),
                         name=os.path.basename(self.file_path).split('.')[0],
+                        file_path=self.file_path,
                         bookmarks=self.get_bookmarks(),
                         parser=self)

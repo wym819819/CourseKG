@@ -5,10 +5,9 @@
 # Description: 定义资源类
 
 from __future__ import annotations
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
 from pptx import Presentation
-from .base import BookMark
 from ..llm import LLM, Prompt
 from collections import Counter
 
@@ -20,6 +19,9 @@ class Slice:
     file_path: str
     start: int | str
     end: int | str
+
+    def __repr__(self) -> str:
+        return f"Slice<path={self.file_path}, range=[{self.start},{self.end}]>"
 
 
 class Resource(ABC):
@@ -90,6 +92,20 @@ class PPTX(Resource):
         super().__init__(pptx_path)
         self.pptx = Presentation(pptx_path)
 
+    def __getstate__(self):
+        """ 自定义序列化方法
+        """
+        state = self.__dict__.copy()
+        # 移除 parser 属性
+        del state['pptx']
+        return state
+
+    def __setstate__(self, state):
+        """ 自定义反序列化方法
+        """
+        self.__dict__.update(state)
+        self.pptx = Presentation(state['file_path'])
+
     def set_slices_by_llm(self,
                           llm: LLM,
                           prompt: Prompt,
@@ -105,6 +121,7 @@ class PPTX(Resource):
         """
 
         name_maps: dict[str, list[int]] = dict()
+        slice_maps: dict[str, list[Slice]] = dict()
         for idx, slide in enumerate(self.pptx.slides):
             for shape in slide.shapes:
                 if shape.has_text_frame:
@@ -114,7 +131,7 @@ class PPTX(Resource):
                     if len(text) <= 10:
                         continue
                     all_name: list[str] = []
-                    for idx in range(samples):
+                    for i_ in range(samples):
                         resp = llm.chat(prompt.get_ner_prompt(text))
                         entities_name = prompt.post_process(resp)
                         if isinstance(entities_name, dict):  # 解析失败或者没有产生结果
@@ -132,9 +149,9 @@ class PPTX(Resource):
                             name_maps[name] = [idx]
         for name in name_maps:
             name_maps[name].sort()
-            name_maps[name] = _merge_index_slice(name_maps[name],
-                                                 self.file_path)
-        self.slices_maps = name_maps
+            slice_maps[name] = _merge_index_slice(name_maps[name],
+                                                  self.file_path)
+        self.slices_maps = slice_maps
 
 
 @dataclass

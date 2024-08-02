@@ -16,11 +16,11 @@ import pickle
 
 if TYPE_CHECKING:
     from .parser import Parser
-    from .resource import ResourceMap, Resource
+    from .resource import ResourceMap, Resource, Slice
 
 logger.remove(0)
 logger.add(parser_log,
-           format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+           format="KG {time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
            mode="a")
 
 
@@ -31,6 +31,7 @@ class KPEntity:
     relations: list['KPRelation'] = field(default_factory=list)
     attributes: dict[str, list] | dict[str, str] = field(
         default_factory=dict)  # 同一个属性可能会存在多个属性值, 后续选择一个最好的值
+    resourceSlices: list['Slice'] = field(default_factory=list)
 
 
 @dataclass
@@ -88,12 +89,13 @@ class Document:
     """
     id: str
     name: str
+    file_path: str
     bookmarks: list[BookMark]
     parser: 'Parser'
     knowledgepoints: list[KPEntity] = field(default_factory=list)
 
     def dump(self, path: str) -> None:
-        """ 序列化 Document 对象，不包含parser属性
+        """ 序列化 Document 对象
 
         Args:
             path: 保存路径
@@ -113,6 +115,7 @@ class Document:
         """ 自定义反序列化方法
         """
         self.__dict__.update(state)
+        # 这里可以还原Parser
 
     @staticmethod
     def load(path: str) -> 'Document':
@@ -312,8 +315,9 @@ class Document:
         ]
         # 创建所有知识点实体和实体属性
         for entity in self.knowledgepoints:
+            res = [str(sl) for sl in entity.resourceSlices]
             cyphers.append(
-                f'CREATE (:KnowledgePoint {{id: "{entity.id}", name: "{entity.name}", define: "{entity.attributes.get("定义", "")}" }})'
+                f'CREATE (:KnowledgePoint {{id: "{entity.id}", name: "{entity.name}", define: "{entity.attributes.get("定义", "")}", resource: {res} }})'
             )
         # 创建所有知识点关联
         for entity in self.knowledgepoints:
@@ -369,5 +373,6 @@ class Document:
                 # 为下面的知识点实体设置Resource Slice
                 for kp in bookmark.get_kps():
                     slices = resource.get_slices(kp.name)
+                    logger.info(f'{kp.name}: {slices}')
                     if slices:
-                        kp.attributes['resources'] = slices
+                        kp.resourceSlices.extend(slices)

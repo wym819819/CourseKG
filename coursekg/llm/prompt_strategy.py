@@ -136,7 +136,7 @@ class ExamplePromptStrategy:
             examples = examples[1:]
         return examples
 
-    def _get_example_by_entity_similarity():
+    def _get_example_by_entity_similarity(self):
         pass
 
     def get_ner_example(self, content: str) -> list:
