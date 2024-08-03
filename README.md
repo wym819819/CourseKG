@@ -29,7 +29,7 @@ CourseKG 使用大模型，利用多种 prompt 优化技术, 自动从教材、�
 
 ```bash
 
-git@github.com:wangtao2001/CourseKG.git
+git clone git@github.com:wangtao2001/CourseKG.git
 cd CourseKG
 conda create -n kg  python=3.10
 pip install -r requirements.txt -i https://pypi.douban.com/simple
@@ -41,3 +41,18 @@ pip install -r requirements.txt -i https://pypi.douban.com/simple
 ## 文档
 
 规划中
+
+## 贡献和引用
+
+欢迎 <a href="https://github.com/wangtao2001/CourseKG/pulls">PR</a> 或 <a href="https://github.com/wangtao2001/CourseKG/issues">issues</a>，欢迎参与任何形式的贡献
+
+如果觉得 CourseKG 项目有助于您的工作，请考虑如下引用:
+
+```
+ @misc{CourseKG,
+       author = {Wang Tao},
+       year = {2024},
+       note = {https://github.com/wangtao2001/CourseKG},
+       title = {CourseKG: Use large model to construct course knowledge graph automatically}
+    }
+```
