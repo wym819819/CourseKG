@@ -15,7 +15,7 @@ CourseKG 使用大模型，利用多种 prompt 优化技术, 自动从教材、�
 基本框架如下图所示：
 
 <p align="center">
-<img src="doc/assets/framework.png" alt="" width="200">
+<img src="doc/assets/framework.png" alt="" width="600">
 <p align="center">
 
 #### 局限性：
