@@ -333,7 +333,7 @@ class Document:
                 if bookmark.title in ignore_page:
                     continue
                 # 创建章节实体
-                res = [resource.file_path for resource in bookmark.resource]
+                res = [str(resource) for resource in bookmark.resource]
                 cyphers.append(
                     f'CREATE (:Chapter {{id: "{bookmark.id}", name: "{bookmark.title}", page_start: {bookmark.page_index}, page_end: {bookmark.page_end}, resource: {res}}})'
                 )
@@ -362,7 +362,7 @@ class Document:
             resource_map (ResourceMap): 资源映射关系
         """
         title, resource = resource_map.bookmark_title, resource_map.resource
-        bookmarks = []
+        bookmarks: list[BookMark] = []
         titles = title.split("|")
         for bk in self.flatten_bookmarks():
             if bk.title in titles:

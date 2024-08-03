@@ -106,53 +106,6 @@ class PPTX(Resource):
         self.__dict__.update(state)
         self.pptx = Presentation(state['file_path'])
 
-    def set_slices_by_llm(self,
-                          llm: LLM,
-                          prompt: Prompt,
-                          samples: int = 3,
-                          top: float = 0.5) -> None:
-        """ 为知识点设置相应的资源
-
-        Args:
-            llm (LLM): 指定LLM
-            prompt (Prompt): 使用的提示词 (建议复用知识抽取的提示词, 只需使用到其中的实体识别部分)
-            samples (int, optional): 采用自我一致性策略的采样次数. Defaults to 5.
-            top (float, optional): 采用自我一致性策略时，出现次数超过 top * samples 时才会被采纳，范围为 [0, 1]. Defaults to 0.5.
-        """
-
-        name_maps: dict[str, list[int]] = dict()
-        slice_maps: dict[str, list[Slice]] = dict()
-        for idx, slide in enumerate(self.pptx.slides):
-            for shape in slide.shapes:
-                if shape.has_text_frame:
-                    # pptx当前页面的文字
-                    text = shape.text_frame.text.strip()
-                    text = text.strip()
-                    if len(text) <= 10:
-                        continue
-                    all_name: list[str] = []
-                    for i_ in range(samples):
-                        resp = llm.chat(prompt.get_ner_prompt(text))
-                        entities_name = prompt.post_process(resp)
-                        if isinstance(entities_name, dict):  # 解析失败或者没有产生结果
-                            continue
-                        all_name.extend(entities_name)
-                    counter = Counter(all_name)
-                    names = [
-                        point for point, count in counter.items()
-                        if count > (samples * top)
-                    ]
-                    for name in names:
-                        if name in name_maps.keys():
-                            name_maps[name].append(idx + 1)
-                        else:
-                            name_maps[name] = [idx]
-        for name in name_maps:
-            name_maps[name].sort()
-            slice_maps[name] = _merge_index_slice(name_maps[name],
-                                                  self.file_path)
-        self.slices_maps = slice_maps
-
 
 @dataclass
 class ResourceMap:

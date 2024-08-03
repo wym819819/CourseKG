@@ -39,11 +39,11 @@ class LLM(ABC):
 class QwenAPI(LLM):
 
     def __init__(
-        self,
-        api_type: str = 'qwen-max',
-        api_key: str = os.getenv("DASHSCOPE_API_KEY"),
-        url:
-        str = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
+            self,
+            api_type: str = 'qwen-max',
+            api_key: str = os.getenv("DASHSCOPE_API_KEY"),
+            url:
+            str = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
     ) -> None:
         """ Qwen 系列模型 API 服务
 
@@ -139,3 +139,7 @@ class VLLM(LLM):
 
         outputs = self.llm.generate([text], sampling_params)
         return outputs[0].outputs[0].text
+
+
+class VisualQA:
+    pass
