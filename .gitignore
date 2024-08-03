@@ -48,5 +48,5 @@ model
 
 *.ps1
 .ipynb_checkpoints
-assets
+assets/pptx/*
 coursekg/database/faiss_index/*

@@ -6,7 +6,7 @@
 
 <h4 align="center">
     <p>
-        <b>中文</b> | <a href="https://github.com/wangtao2001/CourseKG/blob/main/README_EN.md">English</a>
+        <b>中文</b> | <a href="README_EN.md">English</a>
     <p>
 </h4>
 
@@ -23,24 +23,21 @@ CourseKG 使用大模型，利用多种 prompt 优化技术, 自动从教材、�
 - 目前只实现了基本的知识图谱抽取，对 pptx 的解析即将支持
 - 对视频的解析还处于规划中
 
-
 ## 快速使用
 
-直接 clone 本仓库并安装相应依赖,版本建议 cuda:12.2 | python:3.10
+直接 clone 本仓库并安装相应依赖, cuda 版本建议: 12.2
 
 ```bash
 
 git@github.com:wangtao2001/CourseKG.git
-
 cd CourseKG
-
-pip install
+conda create -n kg  python=3.10
+pip install -r requirements.txt -i https://pypi.douban.com/simple
 
 ```
 
 执行 `examples` 目录下的示例文件
 
-
 ## 文档
 
-## 引用
+规划中
