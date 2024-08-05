@@ -20,7 +20,7 @@ CourseKG 使用大模型，利用多种 prompt 优化技术, 自动从教材、�
 
 #### 局限性：
 
-- 目前只实现了基本的知识图谱抽取，对 pptx 的解析即将支持
+- 目前只实现了基本的知识图谱抽取和对 pptx 的解析, 效果有待优化
 - 对视频的解析还处于规划中
 
 ## 快速使用
@@ -44,7 +44,7 @@ pip install -r requirements.txt -i https://pypi.douban.com/simple
 
 ## 贡献和引用
 
-欢迎 <a href="https://github.com/wangtao2001/CourseKG/pulls">PR</a> 或 <a href="https://github.com/wangtao2001/CourseKG/issues">issues</a>，欢迎参与任何形式的贡献
+欢迎提交 `<a href="https://github.com/wangtao2001/CourseKG/pulls">`PR `</a>` 或 `<a href="https://github.com/wangtao2001/CourseKG/issues">`Issues `</a>`，也欢迎参与任何形式的贡献
 
 如果觉得 CourseKG 项目有助于您的工作，请考虑如下引用:
 

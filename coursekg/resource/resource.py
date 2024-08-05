@@ -5,11 +5,13 @@
 # Description: 定义资源类
 
 from __future__ import annotations
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pptx import Presentation
-from ..llm import LLM, Prompt
-from collections import Counter
+from ..llm import VisualLM
+from .utils import pptx2imgs
+import shutil
+from tqdm import tqdm
 
 
 @dataclass
@@ -34,21 +36,24 @@ class Resource(ABC):
         """
         super().__init__()
         self.file_path = file_path
-        self.slices_maps: dict[str, list[Slice]] = dict()
 
     def __repr__(self) -> str:
         return f"Resource<path={self.file_path}>"
 
+    @abstractmethod
     def get_slices(self, keyword: str) -> list[Slice]:
         """ 通过关键词获取切片
 
         Args:
             keyword (str): 关键词
 
+        Raises:
+            NotImplementedError: 子类需要实现该方法
+
         Returns:
             list[Slice]: 切片列表
         """
-        return self.slices_maps.get(keyword, None)
+        raise NotImplementedError
 
 
 def _merge_index_slice(items: list[int], file_path: str) -> list[Slice]:
@@ -91,6 +96,8 @@ class PPTX(Resource):
         """
         super().__init__(pptx_path)
         self.pptx = Presentation(pptx_path)
+        # 每一页对应的描述
+        self.index_maps: dict[int, str] = dict()
 
     def __getstate__(self):
         """ 自定义序列化方法
@@ -105,6 +112,33 @@ class PPTX(Resource):
         """
         self.__dict__.update(state)
         self.pptx = Presentation(state['file_path'])
+
+    def get_slices(self, keyword: str) -> list[Slice]:
+        """ 通过关键词获取切片
+
+        Args:
+            keyword (str): 关键词
+
+        Returns:
+            list[Slice]: 切片列表
+        """
+        # 描述中提到了关键词
+        idxs = [key for key, val in self.index_maps.items() if keyword in val]
+        return _merge_index_slice(idxs, self.file_path)
+
+    def set_maps_by_visual_model(self, model: VisualLM) -> None:
+        """ 使用多模态大模型提取pptx主要内容
+
+        Args:
+            model (VisualLM): 多模态大模型
+        """
+        imgs = pptx2imgs(self.file_path, '.cache')
+        for idx, img in tqdm(enumerate(imgs), total=len(imgs)):
+            res = model.chat(img, "请帮我提取图片中的主要内容")
+            # 页数从1开始
+            self.index_maps[idx+1] = res
+        # 删除缓存文件夹
+        shutil.rmtree('.cache')
 
 
 @dataclass

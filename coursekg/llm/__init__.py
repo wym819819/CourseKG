@@ -5,5 +5,5 @@
 # Description: 大模型接口
 
 from .prompt import Prompt, ExamplePrompt
-from .llm import LLM, VLLM, QwenAPI
+from .llm import LLM, VLLM, QwenAPI, VisualLM
 from .prompt_strategy import ExamplePromptStrategy

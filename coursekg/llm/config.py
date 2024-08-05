@@ -14,3 +14,5 @@ repetition_penalty = 1.05  # 重复token惩罚，被添加到softmax函数中
 presence_penalty = 0  # 整个序列的重复度，被添加到损失函数中
 
 tensor_parallel_size = 2  # 张量并行大小
+
+visual_temperature = 0.7

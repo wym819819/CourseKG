@@ -4,5 +4,6 @@
 # File Name: examples/set_resources.py
 # Description: 为实体挂载资源
 
-from coursekg.document_parser import DOCXParser, PPTX, ResourceMap
+from coursekg.document_parser import DOCXParser
+from coursekg.resource import PPTX, ResourceMap
 

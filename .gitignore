@@ -43,10 +43,12 @@ package-lock.json
 
 test
 cache
+.cache
 log
 model
 
 *.ps1
 .ipynb_checkpoints
-assets/pptx/*
-coursekg/database/faiss_index/*
+assets/pptx
+coursekg/database/faiss_index
+libreoffice_convert.log

@@ -6,11 +6,13 @@
 
 import os
 import requests
-from modelscope import AutoTokenizer
 from abc import ABC, abstractmethod
 import vllm
 from vllm import SamplingParams
 from .config import *
+import torch
+from modelscope import AutoModel, AutoTokenizer
+from PIL import Image
 
 
 class LLM(ABC):
@@ -39,11 +41,11 @@ class LLM(ABC):
 class QwenAPI(LLM):
 
     def __init__(
-            self,
-            api_type: str = 'qwen-max',
-            api_key: str = os.getenv("DASHSCOPE_API_KEY"),
-            url:
-            str = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
+        self,
+        api_type: str = 'qwen-max',
+        api_key: str = os.getenv("DASHSCOPE_API_KEY"),
+        url:
+        str = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
     ) -> None:
         """ Qwen 系列模型 API 服务
 
@@ -142,4 +144,40 @@ class VLLM(LLM):
 
 
 class VisualLM:
-    pass
+
+    def __init__(self, path: str) -> None:
+        """ 多模态大模型, 执行图片问答任务
+        
+        Args:
+            path (str): 模型名称或路径
+        """
+        self.model = AutoModel.from_pretrained(path,
+                                               trust_remote_code=True,
+                                               torch_dtype=torch.float16)
+        self.model = self.model.to(device='cuda')
+
+        self.tokenizer = AutoTokenizer.from_pretrained(path,
+                                                       trust_remote_code=True)
+        self.model.eval()
+
+    def chat(self, image_path: str, message: str) -> str:
+        """ 图片问答
+
+        Args:
+            image_path (str): 图片路径
+            message (str): 提示词
+
+        Returns:
+            str: 模型输出
+        """
+
+        image = Image.open(image_path).convert('RGB')
+        msgs = [{'role': 'user', 'content': message}]
+
+        return self.model.chat(
+            image=image,
+            msgs=msgs,
+            tokenizer=self.tokenizer,
+            sampling=True,
+            temperature=visual_temperature,
+        )
