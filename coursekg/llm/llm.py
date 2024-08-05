@@ -141,5 +141,5 @@ class VLLM(LLM):
         return outputs[0].outputs[0].text
 
 
-class VisualQA:
+class VisualLM:
     pass

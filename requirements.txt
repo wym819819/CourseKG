@@ -1,0 +1,16 @@
+faiss_gpu==1.7.2
+fitz==0.0.1.dev2
+loguru==0.7.2
+modelscope==1.16.1
+opencv_python==4.10.0.84
+paddleocr==2.8.1
+py2neo==2021.2.4
+python_docx==1.1.2
+pytorch_crf==0.7.2
+sentence_transformers==3.0.1
+setuptools==69.5.1
+torch==2.3.1+cu121
+torchvision==0.18.1
+tqdm==4.66.4
+transformers==4.43.3
+vllm==0.5.3.post1

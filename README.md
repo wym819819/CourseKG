@@ -6,7 +6,7 @@
 
 <h4 align="center">
     <p>
-        <b>中文</b> | <a href="README_EN.md">English</a>
+        <b>中文</b> | <a href="README_en.md">English</a>
     <p>
 </h4>
 
@@ -31,7 +31,7 @@ CourseKG 使用大模型，利用多种 prompt 优化技术, 自动从教材、�
 
 git clone git@github.com:wangtao2001/CourseKG.git
 cd CourseKG
-conda create -n kg  python=3.10
+conda create -n kg python=3.10
 pip install -r requirements.txt -i https://pypi.douban.com/simple
 
 ```
