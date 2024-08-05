@@ -1,3 +1,7 @@
+<p align="center">
+<img src="docs/public/logo.png" width="200"  alt="">
+</p>
+
 <div align="center">
 <h1>
   CourseKG: 使用大模型自动构建课程知识图谱
@@ -6,7 +10,7 @@
 
 <h4 align="center">
     <p>
-        <b>中文</b> | <a href="README_en.md">English</a>
+        <b>中文</b> | <a href="README_en.md">English</a> | <a href="https://www.flaticon.com/">图标来源</a>
     <p>
 </h4>
 
@@ -15,7 +19,7 @@ CourseKG 使用大模型，利用多种 prompt 优化技术, 自动从教材、�
 基本框架如下图所示：
 
 <p align="center">
-<img src="doc/assets/framework.png" alt="" width="600">
+<img src="docs/assets/framework.png" alt="" width="600">
 <p align="center">
 
 #### 局限性：
@@ -28,23 +32,38 @@ CourseKG 使用大模型，利用多种 prompt 优化技术, 自动从教材、�
 直接 clone 本仓库并安装相应依赖, cuda 版本建议: 12.2
 
 ```bash
-
 git clone git@github.com:wangtao2001/CourseKG.git
 cd CourseKG
 conda create -n kg python=3.10
 pip install -r requirements.txt -i https://pypi.douban.com/simple
-
 ```
 
 执行 `examples` 目录下的示例文件
 
 ## 文档
 
-规划中
+#### 依赖安装
+
+文档使用 [VitePress](https://vitepress.dev/) 构建, 需安装 Node.js 18 及以上版本
+
+```bash
+npm i
+```
+
+#### 预览
+
+```bash
+npm run docs:dev
+```
+使用浏览器打开 [http://localhost:5173/](http://localhost:5173/) 即可进行预览
+
+#### 部署
+
+文档自定义和部署请参考 [VitePress文档](https://vitepress.dev/guide/what-is-vitepress)
 
 ## 贡献和引用
 
-欢迎提交 `<a href="https://github.com/wangtao2001/CourseKG/pulls">`PR `</a>` 或 `<a href="https://github.com/wangtao2001/CourseKG/issues">`Issues `</a>`，也欢迎参与任何形式的贡献
+欢迎提交 <a href="https://github.com/wangtao2001/CourseKG/pulls">PR</a> 或 <a href="https://github.com/wangtao2001/CourseKG/issues">Issues</a>，也欢迎参与任何形式的贡献
 
 如果觉得 CourseKG 项目有助于您的工作，请考虑如下引用:
 
