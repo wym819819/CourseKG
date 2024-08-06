@@ -6,6 +6,6 @@
 
 from .pdf_parser import PDFParser
 from .docx_parser import DOCXParser
-from .base import BookMark, Document, Parser
-from .parser import Page
+from .base import BookMark, Document
+from .parser import Page, Parser
 from .utils import get_parser

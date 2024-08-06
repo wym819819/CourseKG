@@ -4,4 +4,4 @@
 # File Name: coursekg/resource/__init__.py
 # Description: 资源类接口
 
-from .resource import PPTX, Resource, ResourceMap
+from .resource import PPTX, Resource, ResourceMap, Slice

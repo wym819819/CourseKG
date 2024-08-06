@@ -36,6 +36,7 @@ git clone git@github.com:wangtao2001/CourseKG.git
 cd CourseKG
 conda create -n kg python=3.10
 pip install -r requirements.txt -i https://pypi.douban.com/simple
+pip install -e .
 ```
 
 执行 `examples` 目录下的示例文件

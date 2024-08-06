@@ -160,19 +160,20 @@ class VisualLM:
                                                        trust_remote_code=True)
         self.model.eval()
 
-    def chat(self, image_path: str, message: str) -> str:
+    def chat(self, image_path: str, prompt: str, sys_prompt: str = None) -> str:
         """ 图片问答
 
         Args:
             image_path (str): 图片路径
-            message (str): 提示词
+            prompt (str): 提示词
+            sys_prompt (str, optional): 系统提示词. Defaults to None.
 
         Returns:
             str: 模型输出
         """
 
         image = Image.open(image_path).convert('RGB')
-        msgs = [{'role': 'user', 'content': message}]
+        msgs = [{'role': 'user', 'content': prompt}]
 
         return self.model.chat(
             image=image,
@@ -180,4 +181,5 @@ class VisualLM:
             tokenizer=self.tokenizer,
             sampling=True,
             temperature=visual_temperature,
+            sys_prompt = sys_prompt
         )

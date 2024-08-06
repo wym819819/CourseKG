@@ -13,7 +13,6 @@ from collections import Counter
 from typing import TYPE_CHECKING
 import random
 import pickle
-from .utils import get_parser
 
 if TYPE_CHECKING:
     from .parser import Parser
@@ -116,6 +115,7 @@ class Document:
         """ 自定义反序列化方法
         """
         self.__dict__.update(state)
+        from .utils import get_parser
         self.parser = get_parser(self.file_path)
 
     @staticmethod

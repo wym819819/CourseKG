@@ -6,7 +6,6 @@
 
 import os
 from glob import glob
-import shortuuid
 
 
 def check_os_windows() -> bool:
@@ -20,19 +19,16 @@ def check_os_windows() -> bool:
     return False
 
 
-def pptx2imgs(path: str, cache_path: str = '.cache') -> list[str]:
+def pptx2imgs(path: str, cache_path: str) -> list[str]:
     """ 将pptx转换为图片
 
     Args:
         path (str): pptx文件路径
-        cache_path (str, optional): 图片缓存路径. Defaults to '.cache'.
+        cache_path (str): 图片缓存路径.
 
     Returns:
         list[str]: 排序后的图片列表
     """
-    cache_path = os.path.join(
-        cache_path,
-        shortuuid.ShortUUID().random(length=12))  # 防止target路径中还有其他文件存在
     if not os.path.exists(cache_path):
         os.mkdir(cache_path)
 

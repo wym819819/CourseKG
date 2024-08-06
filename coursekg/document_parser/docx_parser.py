@@ -4,10 +4,9 @@
 # File Name: coursekg/document_parser/docx_parser.py
 # Description: 定义docx文档解析器
 
-from .base import *
+from .base import BookMark
 from .parser import Parser, Content, ContentType
 import docx
-import os
 import uuid
 from xml.dom.minidom import parseString
 

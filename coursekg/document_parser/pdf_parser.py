@@ -4,7 +4,8 @@
 # File Name: coursekg/document_parser/pdf_parser.py
 # Description: 定义pdf文档解析器
 
-from .base import *
+from .base import BookMark
+import uuid
 from .parser import Parser, Page, Content, ContentType
 import fitz
 from paddleocr import PPStructure
@@ -12,42 +13,11 @@ from PIL import Image
 import numpy as np
 import cv2
 import re
-
-
-def _structure_result_sort(result: list[dict], epsilon: int = 5) -> list[dict]:
-    """ 对版面分析的结果进行重排序，以符合阅读习惯
-
-    Args:
-        result (list[dict]): 版面分析结果
-        epsilon (int, optional): 坐标误差容忍值. Defaults to 5.
-
-    Returns:
-        list[dict]: 重排序后的结果
-    """
-    # 按左上角的坐标排序
-    # 首先按 y1 排序，再按 x1 排序
-    result.sort(key=lambda item: (item['bbox'][1], item['bbox'][0]))
-
-    sorted_result = []
-    current_line = []
-    last_y = None
-
-    for item in result:
-        x1, y1, x2, y2 = item['bbox']
-        if last_y is None or abs(y1 - last_y) <= epsilon:
-            current_line.append(item)
-        else:
-            # 对当前行按 x1 排序
-            current_line.sort(key=lambda item: item['bbox'][0])
-            sorted_result.extend(current_line)
-            current_line = [item]
-        last_y = y1
-
-    if current_line:
-        current_line.sort(key=lambda item: item['bbox'][0])
-        sorted_result.extend(current_line)
-
-    return sorted_result
+from ..llm import VisualLM
+from typing import Literal
+from paddleocr.ppstructure.recovery.recovery_to_doc import sorted_layout_boxes
+import os
+import shutil
 
 
 def _replace_linefeed(sentence: str, ignore_end=True, replace='') -> str:
@@ -80,7 +50,44 @@ class PDFParser(Parser):
         """
         super().__init__(pdf_path)
         self.__pdf = fitz.open(pdf_path)
+        self.__parser_mode: Literal['base', 'pp', 'vl'] | None = None
+        self.set_parser_mode_pp_structure()  # 默认模式
+        self.__visual_model = None
         self.__ocr_engine = None
+        self.visual_model_prompt = """使用markdown语法，将图片中识别到的文字转换为markdown格式输出。你必须做到：
+1. 输出和使用识别到的图片的相同的语言，例如，识别到英语的字段，输出的内容必须是英语。
+2. 不要解释和输出无关的文字，直接输出图片中的内容。例如，严禁输出 “以下是我根据图片内容生成的markdown文本：”这样的例子，而是应该直接输出markdown。
+3. 内容不要包含在```markdown ```中、段落公式使用 $$ $$ 的形式、行内公式使用 $ $ 的形式、忽略掉长直线、忽略掉页码。
+4. 如果图片中包含图表，对图表形成摘要即可，无需添加例如“图片中的文本内容如下：”的内容，文字按照markdown格式输出。
+5. 不要为文字自定义标题，也不区分标题和正文，全部当作正文对待。
+再次强调，不要解释和输出无关的文字，直接输出识别到的内容。
+"""
+        self.visual_model_role_prompt = "你是一个PDF文档解析器，使用markdown和latex语法输出图片的内容。"
+
+    def set_parser_mode_base(self):
+        """ 使用基础模式解析
+        """
+        self.__parser_mode = 'base'
+
+    def set_parser_mode_pp_structure(self):
+        """ 使用飞桨的版面分析解析
+        """
+        self.__parser_mode = 'pp'
+        self.__ocr_engine = PPStructure(table=False,
+                                        ocr=True,
+                                        show_log=False)
+
+    def set_parser_mode_visual_model(self, model: VisualLM):
+        """ 使用多模态大模型解析, 实现参考: https://github.com/lazyFrogLOL/llmdocparser
+
+        Args:
+            model (VisualLM): 多模态大模型解析
+        """
+        self.__parser_mode = 'vl'
+        self.__visual_model = model
+        self.__ocr_engine = PPStructure(table=False,
+                                        ocr=True,
+                                        show_log=False)
 
     def __enter__(self) -> 'PDFParser':
         return self
@@ -174,58 +181,112 @@ class PDFParser(Parser):
             contents.extend(page_contents)
         return contents
 
-    def get_page(self, page_index: int, structure=True) -> Page:
-        """ 获取文档页面, 可以使用版面分析获得更好的内容结构
+    def _get_page_img(self, page_index: int, zoom: int = 1):
+        """ 获取页面的图像对象
+
+        Args:
+            page_index (int): 页码
+            zoom (int, optional): 缩放倍数. Defaults to 1.
+
+        Returns:
+            _type_: opencv 转换后的图像对象
+        """
+        pdf_page = self.__pdf[page_index]
+        # 不需要对页面进行缩放
+        mat = fitz.Matrix(zoom, zoom)
+        pm = pdf_page.get_pixmap(matrix=mat, alpha=False)
+        # 图片过大则放弃缩放
+        if pm.width > 2000 or pm.height > 2000:
+            pm = pdf_page.get_pixmap(matrix=fitz.Matrix(1, 1), alpha=False)
+        img = Image.frombytes("RGB", (pm.width, pm.height), pm.samples)
+        img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        return img
+
+    def _page_structure(self, img) -> list[dict]:
+        """ 使用PP-Structure进行版面分析
+
+        Args:
+            img (_type_): 图像对象
+
+        Returns:
+            list[dict]: 识别后的结果
+        """
+        result = self.__ocr_engine(img)
+        h, w, _ = img.shape
+        res = sorted_layout_boxes(result, w)
+        return [{'type': item['type'], 'bbox': item['bbox']} for item in res]
+
+    def get_page(self, page_index: int) -> Page:
+        """ 获取文档页面
 
         Args:
             page_index (int): 页码, 从0开始计数
-            structure (bool, optional): 使用 PP-Structure 进行版面分析. Defaults to True.
 
         Returns:
             Page: 文档页面
         """
-        if structure:
-            if self.__ocr_engine is None:
-                self.__ocr_engine = PPStructure(table=False,
-                                                ocr=True,
-                                                show_log=False)
+        if self.__parser_mode == 'pp':
             pdf_page = self.__pdf[page_index]
-            # 不需要对页面进行缩放
-            mat = fitz.Matrix(1, 1)
-            pm = pdf_page.get_pixmap(matrix=mat, alpha=False)
-            img = Image.frombytes("RGB", [pm.width, pm.height], pm.samples)
-            img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-            result: list[dict] = self.__ocr_engine(img)
-            page = Page(page_index=page_index, contents=[])
-            result = _structure_result_sort(result)
-            for item in result:
-                content = pdf_page.get_textbox(item['bbox'])
-                if item['type'] == 'text':
+            img = self._get_page_img(page_index)
+            blocks = self._page_structure(img)
+            contents: list[Content] = []
+            for block in blocks:
+                content = pdf_page.get_textbox(block['bbox'])
+                if block['type'] == 'text':
                     content = _replace_linefeed(content)
-                    page.contents.append(
+                    contents.append(
                         Content(type=ContentType.Text, content=content))
-                elif item['type'] == 'title':
-                    page.contents.append(
+                elif block['type'] == 'title':
+                    contents.append(
                         Content(type=ContentType.Title, content=content))
-            return page
-        else:
+        elif self.__parser_mode == 'base':
             pdf_page = self.__pdf[page_index]
-            return Page(page_index=page_index + 1,
-                        contents=[
-                            Content(type=ContentType.Text,
-                                    content=pdf_page.get_text())
-                        ])
+            contents = [
+                Content(type=ContentType.Text,
+                        content=pdf_page.get_text())
+            ]
+        elif self.__parser_mode == 'vl':
+            img = self._get_page_img(page_index, zoom=2)
+            h, w, _ = img.shape
+            blocks = self._page_structure(img)
 
-    def get_pages(self, structure=True) -> list[Page]:
-        """ 获取pdf文档所有页面, 可以使用版面分析获得更好的内容结构
+            t = 20
+            # 切割子图, 向外扩充t个像素
+            cache_path = '.cache/pdf_cache'
+            if not os.path.exists(cache_path):
+                os.mkdir(cache_path)
+            contents: list[Content] = []
+            for idx, block in enumerate(blocks):
+                if block['type'] in ['header', 'footer']: continue  # 页眉页脚部分不要
+                x1, y1, x2, y2 = block['bbox']
+                # 扩充裁剪区域
+                x1, y1, x2, y2 = max(0, x1 - t), max(0, y1 - t), min(w, x2 + t), min(h, y2 + t)  # 防止越界
+                if (x2 - x1) < 5 or (y2 - y1) < 5: continue  # 图片过小
+                cropped_img = Image.fromarray(img).crop((x1, y1, x2, y2))
+                file_path = os.path.join(cache_path, f'{idx}.png')
+                cropped_img.save(file_path)
+                res = self.__visual_model.chat(image_path=file_path, prompt=self.visual_model_prompt,
+                                               sys_prompt=self.visual_model_role_prompt)
+                if block['type'] == 'title':
+                    contents.append(
+                        Content(type=ContentType.Title, content=res))
+                else:  # 其余全部当作正文对待
+                    res = _replace_linefeed(res)
+                    contents.append(
+                        Content(type=ContentType.Text, content=res))
+            shutil.rmtree(cache_path)
+        else:
+            contents = []
+        return Page(page_index=page_index + 1,
+                    contents=contents)
 
-        Args:
-            structure (bool, optional): 使用 PP-Structure 进行版面分析. Defaults to True.
+    def get_pages(self) -> list[Page]:
+        """ 获取pdf文档所有页面
 
         Returns:
             list[Page]: 页面列表
         """
         pages: list[Page] = []
         for pg in range(0, self.__pdf.page_count):
-            pages.append(self.get_page(page_index=pg, structure=structure))
+            pages.append(self.get_page(page_index=pg))
         return pages
