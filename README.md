@@ -35,7 +35,7 @@ CourseKG 使用大模型，利用多种 prompt 优化技术, 自动从教材、�
 git clone git@github.com:wangtao2001/CourseKG.git
 cd CourseKG
 conda create -n kg python=3.10
-pip install -r requirements.txt -i https://pypi.douban.com/simple
+pip install -r requirements.txt
 pip install -e .
 ```
 
@@ -43,24 +43,21 @@ pip install -e .
 
 ## 文档
 
-#### 依赖安装
+可以点击 [这里](https://wangtao2001.github.io/CourseKG/) 访问在线文档，如果希望自定义文档请依照以下步骤：
+
+#### 依赖安装和预览
 
 文档使用 [VitePress](https://vitepress.dev/) 构建, 需安装 Node.js 18 及以上版本
 
 ```bash
 npm i
-```
-
-#### 预览
-
-```bash
 npm run docs:dev
 ```
-使用浏览器打开 [http://localhost:5173/](http://localhost:5173/) 即可进行预览
+浏览器打开 [http://localhost:5173/](http://localhost:5173/) 即可进行预览
 
 #### 部署
 
-文档自定义和部署请参考 [VitePress文档](https://vitepress.dev/guide/what-is-vitepress)
+文档修改和部署请参考 [VitePress文档](https://vitepress.dev/guide/what-is-vitepress/)
 
 ## 贡献和引用
 

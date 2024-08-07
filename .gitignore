@@ -38,7 +38,6 @@ _darcs
 # demo 
 **/node_modules
 yarn.lock
-package-lock.json
 
 test
 cache
