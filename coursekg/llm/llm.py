@@ -9,10 +9,8 @@ import requests
 from abc import ABC, abstractmethod
 import vllm
 from vllm import SamplingParams
-from .config import *
-import torch
-from modelscope import AutoModel, AutoTokenizer
-from PIL import Image
+from .config import LLMConfig
+from modelscope import AutoTokenizer
 
 
 class LLM(ABC):
@@ -41,11 +39,12 @@ class LLM(ABC):
 class QwenAPI(LLM):
 
     def __init__(
-        self,
-        api_type: str = 'qwen-max',
-        api_key: str = os.getenv("DASHSCOPE_API_KEY"),
-        url:
-        str = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
+            self,
+            api_type: str = 'qwen-max',
+            api_key: str = os.getenv("DASHSCOPE_API_KEY"),
+            url:
+            str = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+            config: LLMConfig = LLMConfig()
     ) -> None:
         """ Qwen 系列模型 API 服务
 
@@ -53,11 +52,13 @@ class QwenAPI(LLM):
             api_type (str, optional): 模型类型. Defaults to 'qwen-max'.
             api_key (str, optional): API_KEY, 不输入则尝试从环境变量 DASHSCOPE_API_KEY 中获取.
             url (str, optional): 请求地址, 不输入则使用阿里云官方地址.
+            config (LLMConfig, optional): 配置. Defaults to LLMConfig().
         """
         super().__init__()
         self.api_type = api_type
         self.api_key = api_key
         self.url = url
+        self.config = config
 
     def chat(self, message: str) -> str:
         """ 模型的单轮对话
@@ -85,12 +86,12 @@ class QwenAPI(LLM):
             },
             "parameters": {
                 "result_format": "message",
-                "temperature": temperature,
-                "top_p": top_p,
-                "top_k": top_k,
-                "max_tokens": max_tokens,
-                "repetition_penalty": repetition_penalty,
-                "presence_penalty": presence_penalty
+                "temperature": self.config.temperature,
+                "top_p": self.config.top_p,
+                "top_k": self.config.top_k,
+                "max_tokens": self.config.max_tokens,
+                "repetition_penalty": self.config.repetition_penalty,
+                "presence_penalty": self.config.presence_penalty
             }
         }
         response = requests.post(self.url, headers=headers, json=body)
@@ -99,18 +100,20 @@ class QwenAPI(LLM):
 
 class VLLM(LLM):
 
-    def __init__(self, path: str, stop_token_ids: list[int] = None) -> None:
+    def __init__(self, path: str, stop_token_ids: list[int] = None, config: LLMConfig = LLMConfig()) -> None:
         """ 使用VLLM加载模型
 
         Args:
             path (str): 模型名称或路径
             stop_token_ids (list[int], optional): 停止词表. Defaults to None.
+            config (LLMConfig, optional): 配置. Defaults to LLMConfig().
         """
         super().__init__()
         self.path = path
+        self.config = config
         self.llm = vllm.LLM(model=path,
-                            tensor_parallel_size=tensor_parallel_size,
-                            max_model_len=max_model_len,
+                            tensor_parallel_size=self.config.tensor_parallel_size,
+                            max_model_len=self.config.max_model_len,
                             gpu_memory_utilization=1,
                             enforce_eager=True,
                             trust_remote_code=True)
@@ -127,12 +130,12 @@ class VLLM(LLM):
         Returns:
             str: 模型输出
         """
-        sampling_params = SamplingParams(temperature=temperature,
-                                         top_p=top_p,
-                                         top_k=top_k,
-                                         repetition_penalty=repetition_penalty,
-                                         max_tokens=max_tokens,
-                                         presence_penalty=presence_penalty,
+        sampling_params = SamplingParams(temperature=self.config.temperature,
+                                         top_p=self.config.top_p,
+                                         top_k=self.config.top_k,
+                                         repetition_penalty=self.config.repetition_penalty,
+                                         max_tokens=self.config.max_tokens,
+                                         presence_penalty=self.config.presence_penalty,
                                          stop_token_ids=self.stop_token_ids)
         messages = [{"role": "user", "content": message}]
         text = self.tokenizer.apply_chat_template(messages,
@@ -141,45 +144,3 @@ class VLLM(LLM):
 
         outputs = self.llm.generate([text], sampling_params)
         return outputs[0].outputs[0].text
-
-
-class VisualLM:
-
-    def __init__(self, path: str) -> None:
-        """ 多模态大模型, 执行图片问答任务
-        
-        Args:
-            path (str): 模型名称或路径
-        """
-        self.model = AutoModel.from_pretrained(path,
-                                               trust_remote_code=True,
-                                               torch_dtype=torch.float16)
-        self.model = self.model.to(device='cuda')
-
-        self.tokenizer = AutoTokenizer.from_pretrained(path,
-                                                       trust_remote_code=True)
-        self.model.eval()
-
-    def chat(self, image_path: str, prompt: str, sys_prompt: str = None) -> str:
-        """ 图片问答
-
-        Args:
-            image_path (str): 图片路径
-            prompt (str): 提示词
-            sys_prompt (str, optional): 系统提示词. Defaults to None.
-
-        Returns:
-            str: 模型输出
-        """
-
-        image = Image.open(image_path).convert('RGB')
-        msgs = [{'role': 'user', 'content': prompt}]
-
-        return self.model.chat(
-            image=image,
-            msgs=msgs,
-            tokenizer=self.tokenizer,
-            sampling=True,
-            temperature=visual_temperature,
-            sys_prompt = sys_prompt
-        )

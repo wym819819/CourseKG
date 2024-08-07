@@ -6,10 +6,10 @@
 
 from coursekg.document_parser import get_parser
 from coursekg.resource import PPTX, ResourceMap
-from coursekg.llm import VLLM, VisualLM, ExamplePrompt
+from coursekg.llm import VLLM, MiniCPM, ExamplePrompt
 
 model = VLLM('model/Qwen/Qwen2-7B-Instruct')
-visual_model = VisualLM(path='model/openbmb/MiniCPM-Llama3-V-2_5')
+visual_model = MiniCPM(path='model/openbmb/MiniCPM-Llama3-V-2_5')
 
 parser = get_parser('assets/探索数据的奥秘.docx')
 document = parser.get_document()

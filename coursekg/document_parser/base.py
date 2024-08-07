@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from ..llm import LLM, Prompt
 import uuid
 from loguru import logger
-from .config import ignore_page, parser_log
+from .config import Config
 from collections import Counter
 from typing import TYPE_CHECKING
 import random
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from ..resource import ResourceMap, Resource, Slice
 
 logger.remove(0)
-logger.add(parser_log,
+logger.add('log/parser.log',
            format="KG {time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
            mode="a")
 
@@ -304,13 +304,15 @@ class Document:
 
         # 实体共指消解
 
-    def to_cyphers(self) -> list[str]:
+    def to_cyphers(self, config: Config = Config()) -> list[str]:
         """ 将整体的关联关系转换为 cypher CREATE 语句
+
+        Args:
+            config (Config, optional): 配置. Defaults to Config().
 
         Returns:
             list[str]: 多条 cypher 语句
         """
-
         cyphers = [
             f'CREATE (:Document {{id: "{self.id}", name: "{self.name}"}})'
         ]
@@ -331,7 +333,7 @@ class Document:
         def bookmarks_to_cypher(bookmarks: list[BookMark], parent_id: str):
             cyphers: list[str] = []
             for bookmark in bookmarks:
-                if bookmark.title in ignore_page:
+                if bookmark.title in config.ignore_page:
                     continue
                 # 创建章节实体
                 res = [str(resource) for resource in bookmark.resource]

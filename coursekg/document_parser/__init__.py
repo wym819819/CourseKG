@@ -9,3 +9,4 @@ from .docx_parser import DOCXParser
 from .base import BookMark, Document
 from .parser import Page, Parser
 from .utils import get_parser
+from .config import Config

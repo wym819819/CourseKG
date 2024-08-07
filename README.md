@@ -10,7 +10,7 @@
 
 <h4 align="center">
     <p>
-        <b>中文</b> | <a href="README_en.md">English</a> | <a href="https://www.flaticon.com/">图标来源</a>
+        <b>中文</b> | <a href="README_en.md">English</a>
     <p>
 </h4>
 

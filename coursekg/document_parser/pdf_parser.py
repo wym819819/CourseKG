@@ -3,6 +3,7 @@
 # Author: wangtao <wangtao.cpu@gmail.com>
 # File Name: coursekg/document_parser/pdf_parser.py
 # Description: 定义pdf文档解析器
+import json
 
 from .base import BookMark
 import uuid
@@ -13,11 +14,12 @@ from PIL import Image
 import numpy as np
 import cv2
 import re
-from ..llm import VisualLM
+from ..llm import MiniCPM, MiniCPMPrompt
 from typing import Literal
 from paddleocr.ppstructure.recovery.recovery_to_doc import sorted_layout_boxes
 import os
 import shutil
+from ..llm.visual_prompt import Example
 
 
 def _replace_linefeed(sentence: str, ignore_end=True, replace='') -> str:
@@ -52,17 +54,16 @@ class PDFParser(Parser):
         self.__pdf = fitz.open(pdf_path)
         self.__parser_mode: Literal['base', 'pp', 'vl'] | None = None
         self.set_parser_mode_pp_structure()  # 默认模式
-        self.__visual_model = None
+        self.__visual_model: MiniCPMPrompt | None = None
         self.__ocr_engine = None
-        self.visual_model_prompt = """使用markdown语法，将图片中识别到的文字转换为markdown格式输出。你必须做到：
-1. 输出和使用识别到的图片的相同的语言，例如，识别到英语的字段，输出的内容必须是英语。
-2. 不要解释和输出无关的文字，直接输出图片中的内容。例如，严禁输出 “以下是我根据图片内容生成的markdown文本：”这样的例子，而是应该直接输出markdown。
-3. 内容不要包含在```markdown ```中、段落公式使用 $$ $$ 的形式、行内公式使用 $ $ 的形式、忽略掉长直线、忽略掉页码。
-4. 如果图片中包含图表，对图表形成摘要即可，无需添加例如“图片中的文本内容如下：”的内容，文字按照markdown格式输出。
-5. 不要为文字自定义标题，也不区分标题和正文，全部当作正文对待。
-再次强调，不要解释和输出无关的文字，直接输出识别到的内容。
+        self.visual_model_prompt = """将图片中识别到的文字转换文本格式输出。你必须做到：
+1. 你的回答中严禁包含 “以下是根据图片内容生成的文本：”或者 “ 将图片中识别到的文字转换文本格式输出如下：” 等这样的提示语。
+2. 不需要对内容进行解释和总结。
+3. 代码包含在``` ```中、段落公式使用 $$ $$ 的形式、行内公式使用 $ $ 的形式。
+4. 如果图片中包含图表，对图表形成摘要即可，无需添加例如“图片中的文本内容如下：”等这样的提示语。
+再次强调，不要输出和识别到的内容无关的文字。
 """
-        self.visual_model_role_prompt = "你是一个PDF文档解析器，使用markdown和latex语法输出图片的内容。"
+        self.visual_model_role_prompt = "你是一个OCR模型。"
 
     def set_parser_mode_base(self):
         """ 使用基础模式解析
@@ -73,11 +74,9 @@ class PDFParser(Parser):
         """ 使用飞桨的版面分析解析
         """
         self.__parser_mode = 'pp'
-        self.__ocr_engine = PPStructure(table=False,
-                                        ocr=True,
-                                        show_log=False)
+        self.__ocr_engine = PPStructure(table=False, ocr=True, show_log=False)
 
-    def set_parser_mode_visual_model(self, model: VisualLM):
+    def set_parser_mode_visual_model(self, model: MiniCPM):
         """ 使用多模态大模型解析, 实现参考: https://github.com/lazyFrogLOL/llmdocparser
 
         Args:
@@ -85,9 +84,7 @@ class PDFParser(Parser):
         """
         self.__parser_mode = 'vl'
         self.__visual_model = model
-        self.__ocr_engine = PPStructure(table=False,
-                                        ocr=True,
-                                        show_log=False)
+        self.__ocr_engine = PPStructure(table=False, ocr=True, show_log=False)
 
     def __enter__(self) -> 'PDFParser':
         return self
@@ -216,11 +213,12 @@ class PDFParser(Parser):
         res = sorted_layout_boxes(result, w)
         return [{'type': item['type'], 'bbox': item['bbox']} for item in res]
 
-    def get_page(self, page_index: int) -> Page:
+    def get_page(self, page_index: int, example_dataset_path: str = 'dataset/image_example') -> Page:
         """ 获取文档页面
 
         Args:
             page_index (int): 页码, 从0开始计数
+            example_dataset_path (str, optional): 使用多模态模型上下文学习源数据地址文件夹. Defaults to 'dataset/image_example'.
 
         Returns:
             Page: 文档页面
@@ -242,8 +240,7 @@ class PDFParser(Parser):
         elif self.__parser_mode == 'base':
             pdf_page = self.__pdf[page_index]
             contents = [
-                Content(type=ContentType.Text,
-                        content=pdf_page.get_text())
+                Content(type=ContentType.Text, content=pdf_page.get_text())
             ]
         elif self.__parser_mode == 'vl':
             img = self._get_page_img(page_index, zoom=2)
@@ -257,28 +254,38 @@ class PDFParser(Parser):
                 os.mkdir(cache_path)
             contents: list[Content] = []
             for idx, block in enumerate(blocks):
-                if block['type'] in ['header', 'footer']: continue  # 页眉页脚部分不要
+                if block['type'] in ['header', 'footer', 'reference']:
+                    continue  # 页眉页脚注释部分不要
                 x1, y1, x2, y2 = block['bbox']
                 # 扩充裁剪区域
-                x1, y1, x2, y2 = max(0, x1 - t), max(0, y1 - t), min(w, x2 + t), min(h, y2 + t)  # 防止越界
-                if (x2 - x1) < 5 or (y2 - y1) < 5: continue  # 图片过小
+                x1, y1, x2, y2 = max(0, x1 - t), max(0, y1 - t), min(
+                    w, x2 + t), min(h, y2 + t)  # 防止越界
+                if (x2 - x1) < 5 or (y2 - y1) < 5:
+                    continue  # 区域过小
+                if block['type'] == 'figure' and ((x2 - x1) < 150 or
+                                                  (y2 - y1) < 150):
+                    continue  # 图片过小
                 cropped_img = Image.fromarray(img).crop((x1, y1, x2, y2))
                 file_path = os.path.join(cache_path, f'{idx}.png')
                 cropped_img.save(file_path)
-                res = self.__visual_model.chat(image_path=file_path, prompt=self.visual_model_prompt,
-                                               sys_prompt=self.visual_model_role_prompt)
+                assert isinstance(self.__visual_model, MiniCPM)
+                prompt = MiniCPMPrompt(file_path, self.visual_model_prompt)
+                # 从库中添加示例
+                with open(os.path.join(cache_path, 'example.json')) as f:
+                    examples = json.load(f)
+                    # TODO
+                res = self.__visual_model.chat(prompt=prompt, sys_prompt=self.visual_model_role_prompt)
                 if block['type'] == 'title':
                     contents.append(
                         Content(type=ContentType.Title, content=res))
                 else:  # 其余全部当作正文对待
                     res = _replace_linefeed(res)
-                    contents.append(
-                        Content(type=ContentType.Text, content=res))
+                    contents.append(Content(type=ContentType.Text,
+                                            content=res))
             shutil.rmtree(cache_path)
         else:
             contents = []
-        return Page(page_index=page_index + 1,
-                    contents=contents)
+        return Page(page_index=page_index + 1, contents=contents)
 
     def get_pages(self) -> list[Page]:
         """ 获取pdf文档所有页面
