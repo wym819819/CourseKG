@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
+  base: '/CourseKG/',
   title: "CourseKG",
   description: "使用大模型自动构建课程知识图谱",
-  head: [['link', { rel: 'icon', href: '/logo.png' }]],
+  head: [['link', { rel: 'icon', href: '/CourseKG/logo.png' }]],
   themeConfig: {
     search: {
       provider: 'local',
