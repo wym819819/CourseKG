@@ -3,7 +3,6 @@
 # Author: wangtao <wangtao.cpu@gmail.com>
 # File Name: coursekg/document_parser/pdf_parser.py
 # Description: 定义pdf文档解析器
-import json
 
 from .base import BookMark
 import uuid
@@ -19,7 +18,6 @@ from typing import Literal
 from paddleocr.ppstructure.recovery.recovery_to_doc import sorted_layout_boxes
 import os
 import shutil
-from ..llm.visual_prompt import Example
 
 
 def _replace_linefeed(sentence: str, ignore_end=True, replace='') -> str:
@@ -56,14 +54,6 @@ class PDFParser(Parser):
         self.set_parser_mode_pp_structure()  # 默认模式
         self.__visual_model: MiniCPMPrompt | None = None
         self.__ocr_engine = None
-        self.visual_model_prompt = """将图片中识别到的文字转换文本格式输出。你必须做到：
-1. 你的回答中严禁包含 “以下是根据图片内容生成的文本：”或者 “ 将图片中识别到的文字转换文本格式输出如下：” 等这样的提示语。
-2. 不需要对内容进行解释和总结。
-3. 代码包含在``` ```中、段落公式使用 $$ $$ 的形式、行内公式使用 $ $ 的形式。
-4. 如果图片中包含图表，对图表形成摘要即可，无需添加例如“图片中的文本内容如下：”等这样的提示语。
-再次强调，不要输出和识别到的内容无关的文字。
-"""
-        self.visual_model_role_prompt = "你是一个OCR模型。"
 
     def set_parser_mode_base(self):
         """ 使用基础模式解析
@@ -213,12 +203,11 @@ class PDFParser(Parser):
         res = sorted_layout_boxes(result, w)
         return [{'type': item['type'], 'bbox': item['bbox']} for item in res]
 
-    def get_page(self, page_index: int, example_dataset_path: str = 'dataset/image_example') -> Page:
+    def get_page(self, page_index: int) -> Page:
         """ 获取文档页面
 
         Args:
             page_index (int): 页码, 从0开始计数
-            example_dataset_path (str, optional): 使用多模态模型上下文学习源数据地址文件夹. Defaults to 'dataset/image_example'.
 
         Returns:
             Page: 文档页面
@@ -269,12 +258,9 @@ class PDFParser(Parser):
                 file_path = os.path.join(cache_path, f'{idx}.png')
                 cropped_img.save(file_path)
                 assert isinstance(self.__visual_model, MiniCPM)
-                prompt = MiniCPMPrompt(file_path, self.visual_model_prompt)
-                # 从库中添加示例
-                with open(os.path.join(cache_path, 'example.json')) as f:
-                    examples = json.load(f)
-                    # TODO
-                res = self.__visual_model.chat(prompt=prompt, sys_prompt=self.visual_model_role_prompt)
+                prompt = MiniCPMPrompt('ocr').use_examples()
+                res = self.__visual_model.chat(msgs=prompt.get_prompt(file_path), sys_prompt=prompt.get_sys_prompt())
+                print(res)
                 if block['type'] == 'title':
                     contents.append(
                         Content(type=ContentType.Title, content=res))

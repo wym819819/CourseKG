@@ -12,6 +12,7 @@ import json
 import numpy as np
 from glob import glob
 from typing import Literal
+from abc import ABC, abstractmethod
 
 
 class Database:
@@ -27,33 +28,82 @@ class Database:
         self.mongo = mongo
 
 
-class ExamplePromptStrategy:
-
-    def __init__(self,
-                 embed_model_path: str,
-                 mongo_url: str = 'mongodb://localhost:27017/',
-                 faiss_path: str = 'coursekg/database/faiss_index',
-                 topk: int = 3,
-                 avoid_first: bool = False) -> None:
+class ExamplePromptStrategy(ABC):
+    def __init__(self):
         """ 提示词示例检索策略
+        """
+        pass
+
+    @abstractmethod
+    def get_ner_example(self, content: str) -> list:
+        """ 获取实体抽取提示词示例
+
+        Args:
+            content (str): 待抽取的文本内容
+
+        Raises:
+            NotImplementedError: 子类需要实现该方法
+
+        Returns:
+            list: 提示词示例列表
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_re_example(self, content: str) -> list:
+        """ 获取关系抽取提示词示例
+
+        Args:
+            content (str): 待抽取的文本内容
+
+        Raises:
+            NotImplementedError: 子类需要实现该方法
+
+        Returns:
+            list: 提示词示例列表
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_ae_example(self, content: str) -> list:
+        """ 获取属性抽取提示词示例
+
+        Args:
+            content (str): 待抽取的文本内容
+
+        Raises:
+            NotImplementedError: 子类需要实现该方法
+
+        Returns:
+            list: 提示词示例列表
+        """
+        raise NotImplementedError
+
+
+class SentenceEmbeddingStrategy(ExamplePromptStrategy):
+
+    def __init__(self, embed_model_path: str, mongo_url: str = 'mongodb://localhost:27017/',
+                 faiss_path: str = 'coursekg/database/faiss_index', topk: int = 3, avoid_first: bool = False) -> None:
+        """ 基于句嵌入相似度的示例检索策略
 
         Args:
             embed_model_path (str): 嵌入模型路径
             mongo_url (str, optional): 文档数据库 mongodb 地址. Defaults to 'mongodb://localhost:27017/'.
             faiss_path (str, optional): 向量数据库 faiss 存储地址. Defaults to 'coursekg/database/faiss_index'.
             topk (int, optional): 选择排名前topk个示例. Defaults to 3.
-            avoid_first (bool, optional): 去掉相似度最大的那个示例且不减少最终topk数量. Default to 3.
+            avoid_first (bool, optional): 去掉相似度最大的那个示例且不减少最终topk数量. Default to False.
         """
+        super().__init__()
         mongo = Mongo(mongo_url, 'coursekg')
         self.db_ner = Database(
             faiss=Faiss(os.path.join(faiss_path, 'faiss_index_ner.bin')),
             mongo=mongo.get_collection('prompt_example_ner'))
         self.db_re = Database(faiss=Faiss(
             os.path.join(faiss_path, 'faiss_index_re.bin')),
-                              mongo=mongo.get_collection('prompt_example_re'))
+            mongo=mongo.get_collection('prompt_example_re'))
         self.db_ae = Database(faiss=Faiss(
             os.path.join(faiss_path, 'faiss_index_ae.bin')),
-                              mongo=mongo.get_collection('prompt_example_ae'))
+            mongo=mongo.get_collection('prompt_example_ae'))
         self.embed_model = SentenceTransformer(embed_model_path)
         self.topk = topk
         self.avoid_first = avoid_first

@@ -1,7 +1,6 @@
 from .config import VisualConfig
 import torch
 from modelscope import AutoModel, AutoTokenizer
-from .visual_prompt import MiniCPMPrompt
 
 
 class MiniCPM:
@@ -24,11 +23,11 @@ class MiniCPM:
         self.model.eval()
         self.config = config
 
-    def chat(self, prompt: MiniCPMPrompt, sys_prompt: str = None) -> str:
+    def chat(self, msgs: list, sys_prompt: str = None) -> str:
         """ 图片问答
 
         Args:
-            prompt (MiniCPMPrompt): 提示词类
+            msgs (list): 输入内容.
             sys_prompt (str, optional): 系统提示词. Defaults to None.
 
         Returns:
@@ -36,7 +35,7 @@ class MiniCPM:
         """
 
         return self.model.chat(image=None,
-                               msgs=prompt.get_prompt(),
+                               msgs=msgs,
                                tokenizer=self.tokenizer,
                                sampling=True,
                                temperature=self.config.temperature,

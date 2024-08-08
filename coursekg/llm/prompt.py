@@ -5,12 +5,9 @@
 # Description: 定义提示词类
 
 from abc import ABC, abstractmethod
-import json
 import re
 from loguru import logger
-from glob import glob
 import json
-import numpy as np
 from .prompt_strategy import ExamplePromptStrategy
 
 entities = {"知识点": "知识点实体类型表示特定领域或学科中的知识单元"}

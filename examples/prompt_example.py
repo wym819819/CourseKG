@@ -6,11 +6,11 @@
 
 from coursekg.document_parser import PDFParser
 from coursekg.database import Neo4j
-from coursekg.llm import ExamplePrompt, VLLM, ExamplePromptStrategy
+from coursekg.llm import ExamplePrompt, VLLM, SentenceEmbeddingStrategy
 
 model = VLLM('model/Qwen/Qwen2-7B-Instruct')
 neo = Neo4j('http://10.4.3.67:7474', 'neo4j', 'neo4j')
-strategy = ExamplePromptStrategy(
+strategy = SentenceEmbeddingStrategy(
     embed_model_path='model/lier007/xiaobu-embedding-v2')
 
 with PDFParser('assets/深度学习入门：基于Python的理论与实现.pdf') as parser:

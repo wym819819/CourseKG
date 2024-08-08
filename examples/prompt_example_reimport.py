@@ -4,8 +4,8 @@
 # File Name: examples/prompt_example_reimport.py
 # Description: 导入提示词示例库
 
-from coursekg.llm import ExamplePromptStrategy
+from coursekg.llm import SentenceEmbeddingStrategy
 
-strategy = ExamplePromptStrategy(
+strategy = SentenceEmbeddingStrategy(
     embed_model_path='model/lier007/xiaobu-embedding-v2')
 strategy.reimport_example(1792)

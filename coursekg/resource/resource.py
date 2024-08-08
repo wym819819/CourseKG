@@ -134,8 +134,9 @@ class PPTX(Resource):
         """
         cache_path = '.cache/pptx_imgs_cache'
         imgs = pptx2imgs(self.file_path, cache_path)
+        prompt = MiniCPMPrompt('ie')
         for idx, img in tqdm(enumerate(imgs), total=len(imgs)):
-            res = model.chat(MiniCPMPrompt(img, "请帮我提取图片中的主要内容"))
+            res = model.chat(prompt.get_prompt(img))
             # 页数从1开始
             self.index_maps[idx+1] = res
         # 删除缓存文件夹
