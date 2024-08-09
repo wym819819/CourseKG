@@ -67,7 +67,7 @@ npm run docs:dev
 
 ```
  @misc{CourseKG,
-       author = {Wang Tao},
+       author = {Wang, Tao},
        year = {2024},
        note = {https://github.com/wangtao2001/CourseKG},
        title = {CourseKG: Use large model to construct course knowledge graph automatically}
